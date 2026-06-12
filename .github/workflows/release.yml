@@ -1,0 +1,52 @@
+# Release: when a GitHub Release is published, cross-compile distributable
+# binaries for Linux and macOS (x86_64 + aarch64) and attach them, with a
+# SHA256SUMS file, to that release. Zig cross-compiles all targets from one
+# Linux runner; the CI workflow already validates native macOS build + tests.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+          cache-key: release
+
+      - name: Build release binaries
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          # asset label -> zig target triple. musl keeps the Linux builds
+          # fully static and portable across distros.
+          targets="x86_64-linux:x86_64-linux-musl
+          aarch64-linux:aarch64-linux-musl
+          x86_64-macos:x86_64-macos
+          aarch64-macos:aarch64-macos"
+          mkdir -p dist
+          while IFS=: read -r label triple; do
+            [ -n "$label" ] || continue
+            rm -rf zig-out
+            zig build -Dtarget="$triple" -Doptimize=ReleaseSafe --summary all
+            stage="butler-${ver}-${label}"
+            mkdir -p "$stage"
+            cp zig-out/bin/butler "$stage/"
+            cp -r man README.md LICENSE CHANGELOG.md docs "$stage/"
+            tar -czf "dist/${stage}.tar.gz" "$stage"
+            rm -rf "$stage"
+          done <<< "$targets"
+          ( cd dist && sha256sum *.tar.gz > SHA256SUMS )
+          ls -l dist
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tar.gz dist/SHA256SUMS --clobber
