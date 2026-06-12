@@ -1,0 +1,332 @@
+.TH BUTLER 1 "2026-06-12" "butler 0.1.0" "User Commands"
+.SH NAME
+butler \- command\-line client for the BuchhaltungsButler (BHB) accounting API
+.SH SYNOPSIS
+.B butler
+.I resource verb
+.RI [ flags ]
+.SH DESCRIPTION
+.B butler
+is a small, dependency\-free client for the BuchhaltungsButler accounting
+API. It lists, searches and books entries from the terminal using an
+AWS/\fBgh\fR\-style
+.I "resource verb"
+grammar. Output is an aligned table by default, or raw JSON with
+.B \-\-output json
+for piping into \fBjq\fR.
+.SH RESOURCES
+.TP
+.B transactions
+bank transactions (list, show)
+.TP
+.B receipts
+receipts / documents (list, show, upload, delete)
+.TP
+.B postings
+extended bookings (list, create, unconfirm), alias: bookings
+.TP
+.B accounts
+chart of accounts (list)
+.TP
+.B status
+test API connectivity and show client info
+.TP
+.B login
+store credentials for a profile
+.TP
+.B logout
+explain how to remove a profile's credentials
+.SH COMMANDS
+.SS butler transactions list [flags]
+.TP
+.B \-\-date\-from YYYY\-MM\-DD
+earliest booking date
+.TP
+.B \-\-date\-to YYYY\-MM\-DD
+latest booking date
+.TP
+.B \-\-account n
+bank account number
+.TP
+.B \-\-to\-from text
+counterparty filter (server\-side)
+.TP
+.B \-\-id\-from n
+lowest id (exclusive)
+.TP
+.B \-\-id\-to n
+highest id (exclusive)
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.SS butler transactions show <id>
+.TP
+.B id
+transaction id_by_customer
+.PP
+Show a single transaction by its id_by_customer.
+.br
+.SS butler receipts list <inbound|outbound> [flags]
+.TP
+.B inbound|outbound
+receipt direction (required)
+.TP
+.B \-\-counterparty text
+counterparty filter
+.TP
+.B \-\-date\-from YYYY\-MM\-DD
+earliest date
+.TP
+.B \-\-date\-to YYYY\-MM\-DD
+latest date
+.TP
+.B \-\-payment\-status s
+e.g. paid | unpaid
+.TP
+.B \-\-invoice\-number s
+invoice number filter
+.TP
+.B \-\-due\-date YYYY\-MM\-DD
+due\-date filter
+.TP
+.B \-\-include\-offers
+include offers
+.TP
+.B \-\-deleted
+include deleted receipts
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.SS butler receipts show <id> [\-\-direction inbound|outbound]
+.TP
+.B id
+receipt id_by_customer
+.TP
+.B \-\-direction inbound|outbound
+narrow the lookup
+.br
+values: inbound, outbound
+.PP
+Show a single receipt by its id_by_customer.
+.br
+.PP
+BHB's get\-by\-id route returns HTTP 404 (server\-side bug), so butler looks
+.br
+the id up via the list endpoint; at most 500 receipts per direction are
+.br
+searched. Pass \-\-direction to narrow the lookup.
+.br
+.SS butler receipts upload <file> \-\-type <type> [flags]
+.TP
+.B file
+path to the receipt file
+.TP
+.B \-\-type type
+receipt type, e.g. "invoice inbound" (required)
+.TP
+.B \-\-counterparty text
+counterparty
+.TP
+.B \-\-invoice\-number s
+invoice number
+.TP
+.B \-\-date YYYY\-MM\-DD
+document date
+.TP
+.B \-\-amount n
+gross amount
+.TP
+.B \-\-vat\-rate n
+vat rate
+.TP
+.B \-\-dry\-run
+print what would be sent, send nothing
+.SS butler receipts delete <id>
+.TP
+.B id
+receipt id_by_customer
+.PP
+Delete a receipt by its id_by_customer.
+.br
+.SS butler postings list \-\-date\-from D \-\-date\-to D [flags]
+.TP
+.B \-\-date\-from YYYY\-MM\-DD
+earliest date (required)
+.TP
+.B \-\-date\-to YYYY\-MM\-DD
+latest date (required)
+.TP
+.B \-\-account csv
+accounts filter (e.g. "free booking")
+.TP
+.B \-\-postingaccount csv
+posting\-account filter (e.g. 3790)
+.TP
+.B \-\-status s
+all | fixed | unfixed
+.TP
+.B \-\-order s
+e.g. "date ASC"
+.TP
+.B \-\-cost\-location s
+cost location filter
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.SS butler postings create (\-\-from\-json <file> | <line flags>) [flags]
+.TP
+.B \-\-from\-json file
+JSON array of split lines (see FORMAT)
+.TP
+.B \-\-date YYYY\-MM\-DD
+single line: date
+.TP
+.B \-\-debit acct
+single line: debit account
+.TP
+.B \-\-credit acct
+single line: credit account
+.TP
+.B \-\-amount n
+single line: positive amount, e.g. 5000.00
+.TP
+.B \-\-vat code
+single line: vat code
+.br
+values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_2, 7_both_app
+.TP
+.B \-\-text s
+single line: posting text
+.TP
+.B \-\-cost\-location s
+optional cost location
+.TP
+.B \-\-clearing acct
+assert this account nets to zero before sending
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+New postings are created CONFIRMED (visible to the API and the web UI,
+.br
+still unfixed so they stay editable/deletable in the UI). To stage one
+.br
+for UI\-only review, unconfirm it afterwards: butler postings unconfirm <id>.
+.br
+.PP
+\-\-from\-json FORMAT
+.br
+  [ {"date":"2026\-05\-31","postingtext":"...","amount":"5000.00",
+.br
+     "debit":6020,"credit":3790,"vat":"0_none"} , ... ]
+.br
+.SS butler postings unconfirm <id>
+.TP
+.B id
+posting id
+.PP
+Set a free posting back to unconfirmed by its posting id.
+.br
+.SS butler postings delete [id]
+.TP
+.B id
+posting id (unused — deletion is web\-UI only)
+.PP
+The BHB API has no posting\-delete endpoint; this command only explains
+.br
+that deletion must happen in the web UI, and exits with a usage error.
+.br
+.SS butler accounts list [flags]
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.SS status
+Probe the BHB API (authenticated) and print the api base, profile, and butler/API
+.br
+versions. Exits non\-zero if the call fails.
+.br
+.SS login
+Prompt for api_client / api_secret / api_key and store them in
+.br
+$XDG_CONFIG_HOME/butler/credentials (default ~/.config/butler/credentials),
+.br
+mode 0600.
+.br
+.SS logout
+Explains how to remove a profile's [section] from the credentials file
+.br
+($XDG_CONFIG_HOME/butler/credentials, default ~/.config/butler/credentials).
+.br
+.SH GLOBAL FLAGS
+.TP
+.B \-\-profile name
+credentials profile (default: default)
+.TP
+.B \-\-output table|json
+output format (default: table)
+.br
+values: table, json
+.TP
+.B \-\-api\-base url
+override API base URL (https unless \-\-insecure)
+.TP
+.B \-\-debug
+print the request line to stderr
+.TP
+.B \-\-insecure
+allow sending credentials over a non\-HTTPS api\-base
+.TP
+.B \-\-help
+show help; per command: `<resource> <verb> \-\-help`
+.TP
+.B \-\-version
+print the butler version
+.SH AUTHENTICATION
+butler needs an API client id, an API client secret (HTTP Basic auth) and
+an account api_key (sent in each request body). Store them with
+.B butler login
+or via the
+.BR BUTLER_API_CLIENT ", " BUTLER_API_SECRET " and " BUTLER_API_KEY
+environment variables (which take precedence over the file).
+.SH FILES
+.TP
+.I ~/.config/butler/credentials
+INI file of profiles, mode 0600 (honours \fB$XDG_CONFIG_HOME\fR).
+.SH EXIT STATUS
+.TP
+.B 0
+success
+.TP
+.B 1
+API or HTTP error
+.TP
+.B 2
+usage error
+.SH SEE ALSO
+Full reference and examples: the project README and docs/commands.md.
+.SH AUTHOR
+An independent, unofficial client; not affiliated with BuchhaltungsButler GmbH.

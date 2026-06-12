@@ -1,0 +1,86 @@
+version: '3'
+
+# Dev tasks for the `butler` BHB CLI. Run `task --list` to see everything.
+#
+# ZIG/ZLINT default to the binaries on PATH. Without a local toolchain,
+# override per invocation, e.g.:
+#   task test ZIG="nix shell nixpkgs#zig_0_16 -c zig"
+#   task lint ZLINT="nix run nixpkgs#zig-zlint --"
+# (or enter the flake devShell, which provides both).
+
+vars:
+  ZIG: zig
+  ZLINT: zlint
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the binary (zig-out/bin/butler)
+    cmds:
+      - "{{.ZIG}} build"
+
+  run:
+    desc: 'Build & run, e.g. `task run -- postings list --date-from 2026-05-01 --date-to 2026-05-31`'
+    cmds:
+      - "{{.ZIG}} build run -- {{.CLI_ARGS}}"
+
+  test:
+    desc: Run the unit tests
+    cmds:
+      - "{{.ZIG}} build test --summary all"
+
+  docs:
+    desc: Regenerate man/butler.1 and docs/commands.md from src/spec.zig
+    cmds:
+      - "{{.ZIG}} build gen-docs"
+
+  docs-check:
+    desc: Verify the committed docs match the spec (regenerate + diff)
+    cmds:
+      - "{{.ZIG}} build gen-docs"
+      - git diff --exit-code -- man/butler.1 docs/commands.md
+
+  fmt:
+    desc: Format all source files
+    cmds:
+      - "{{.ZIG}} fmt src/ tools/ build.zig"
+
+  fmt-check:
+    desc: Verify formatting without changing files
+    cmds:
+      - "{{.ZIG}} fmt --check src/ tools/ build.zig"
+
+  lint:
+    desc: Static analysis with zlint
+    cmds:
+      - "{{.ZLINT}} $(find src -name '*.zig')"
+
+  check:
+    desc: All quality gates (fmt-check + lint + test) — run before pushing
+    cmds:
+      - task: fmt-check
+      - task: lint
+      - task: test
+
+  nix-build:
+    desc: Build the Nix package (runs the test check too)
+    cmds:
+      - nix build .#butler
+
+  install:
+    desc: Build and symlink the binary into ~/.local/bin
+    cmds:
+      - "{{.ZIG}} build"
+      - mkdir -p ~/.local/bin
+      - ln -sf "$(pwd)/zig-out/bin/butler" ~/.local/bin/butler
+      - echo "linked ~/.local/bin/butler"
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf zig-out .zig-cache

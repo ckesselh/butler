@@ -1,0 +1,33 @@
+.{
+    .name = .butler,
+    // The one authoritative version. build.zig injects it into the code
+    // (src/spec.zig reads it via the build_options module); package.nix
+    // repeats it for Nix and CI asserts the two agree.
+    .version = "0.1.0",
+
+    // The fingerprint is a globally-unique package id. It is generated once
+    // by the toolchain and then never changed.
+    .fingerprint = 0xc6ddea30f1f66418,
+
+    .minimum_zig_version = "0.16.0",
+
+    // No external dependencies: butler uses only the Zig standard library
+    // (std.http.Client, std.json, std.crypto, std.Io). Keeping this empty is
+    // what makes the build fully offline — nothing is fetched at build time,
+    // so no vendoring is needed for the Nix package either.
+    .dependencies = .{},
+
+    // Files that make up the package ("" means the build root; build.zig and
+    // build.zig.zon are always implicitly included).
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tools",
+        "man",
+        "docs",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE",
+    },
+}

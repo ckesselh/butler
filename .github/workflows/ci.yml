@@ -1,0 +1,66 @@
+# CI: native build + tests on Linux and macOS, formatting, generated-docs
+# drift, cross-compile smoke checks, and the Nix package.
+#
+# macos-15 is pinned (not macos-latest): the macos-latest label is migrating
+# to macOS 26, which has known Zig toolchain issues. Revisit the pin once Zig
+# on macOS 26 settles.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+          cache-key: ${{ matrix.os }}
+      - run: zig build --summary all
+      - run: zig build test --summary all
+      - run: zig fmt --check src/ tools/ build.zig
+        if: matrix.os == 'ubuntu-latest'
+      - name: Generated docs are current
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          zig build gen-docs
+          git diff --exit-code -- man/butler.1 docs/commands.md
+      - name: Version fields agree
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          zon="$(sed -n 's/^\s*\.version = "\(.*\)",$/\1/p' build.zig.zon)"
+          nix="$(sed -n 's/^\s*version = "\(.*\)";$/\1/p' package.nix)"
+          echo "build.zig.zon=$zon package.nix=$nix"
+          test -n "$zon" && test "$zon" = "$nix"
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+          cache-key: cross
+      - run: zig build -Dtarget=aarch64-macos --summary all
+      - run: zig build -Dtarget=x86_64-macos --summary all
+      - run: zig build -Dtarget=x86_64-linux-musl --summary all
+      - run: zig build -Dtarget=aarch64-linux-musl --summary all
+
+  nix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix build .#butler --print-build-logs
