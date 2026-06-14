@@ -12,11 +12,18 @@ const json = @import("util/json.zig");
 const Client = @import("client.zig").Client;
 const transactions = @import("resources/transactions.zig");
 const receipts = @import("resources/receipts.zig");
-const postings = @import("resources/postings.zig");
+const bookings = @import("resources/bookings.zig");
 const accounts = @import("resources/accounts.zig");
 
 /// Build version, injected from build.zig.zon via spec.zig.
 pub const version = spec.version;
+
+/// Run a fallible operation for its side effect only, discarding any error.
+/// For best-effort cleanup — flushing on exit, restoring the terminal — where
+/// there is nothing to recover and propagating would mask the real result.
+fn ignoreError(result: anyerror!void) void {
+    result catch return;
+}
 
 pub fn main(init: std.process.Init) !u8 {
     // Buffered stdout/stderr; flushed exactly once on every exit path.
@@ -28,14 +35,15 @@ pub fn main(init: std.process.Init) !u8 {
     const stderr = &stderr_writer.interface;
 
     const code = run(init, stdout, stderr) catch |err| {
-        stdout.flush() catch {};
-        stderr.flush() catch {};
+        ignoreError(stdout.flush());
+        ignoreError(stderr.flush());
         return err;
     };
     // A failed stdout flush means the user did not get the output (e.g. a
-    // closed pipe or a full disk) — exit non-zero rather than lie.
+    // closed pipe or a full disk) — exit non-zero rather than lie. A stderr
+    // (diagnostics) flush failure is non-fatal.
     stdout.flush() catch return 1;
-    stderr.flush() catch {};
+    ignoreError(stderr.flush());
     return code;
 }
 
@@ -78,7 +86,7 @@ fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !
         return 0;
     }
 
-    // Resolve the resource (bookings is an alias for postings) and verb.
+    // Resolve the resource (postings is an alias for bookings) and verb.
     const resource = flags.positionals.items[0];
     const verb = flags.pos(1) orelse "";
     const r = std.meta.stringToEnum(spec.Resource, resource) orelse {
@@ -228,7 +236,7 @@ fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !
     const result: anyerror!u8 = switch (r) {
         .transactions => transactions.run(client, verb, &flags, stdout, stderr, out_mode),
         .receipts => receipts.run(client, verb, &flags, stdout, stderr, out_mode),
-        .postings, .bookings => postings.run(client, verb, &flags, stdout, stderr, out_mode),
+        .postings, .bookings => bookings.run(client, verb, &flags, stdout, stderr, out_mode),
         .accounts => accounts.run(client, verb, &flags, stdout, stderr, out_mode),
         .status => doStatus(client, profile, prof.api_client, stdout, stderr, style),
         .login, .logout => unreachable,
@@ -258,7 +266,7 @@ fn readSecretLine(gpa: std.mem.Allocator, reader: *std.Io.Reader, tty: bool, std
     var noecho = old;
     noecho.lflag.ECHO = false;
     std.posix.tcsetattr(fd, .NOW, noecho) catch return readLine(gpa, reader);
-    defer std.posix.tcsetattr(fd, .NOW, old) catch {};
+    defer ignoreError(std.posix.tcsetattr(fd, .NOW, old));
     const line = try readLine(gpa, reader);
     try stderr.writeAll("\n");
     try stderr.flush();
@@ -351,7 +359,9 @@ test {
     std.testing.refAllDecls(@import("client.zig"));
     std.testing.refAllDecls(@import("resources/transactions.zig"));
     std.testing.refAllDecls(@import("resources/receipts.zig"));
-    std.testing.refAllDecls(@import("resources/postings.zig"));
+    std.testing.refAllDecls(@import("resources/bookings.zig"));
+    std.testing.refAllDecls(@import("resources/openitems.zig"));
+    std.testing.refAllDecls(@import("resources/postingline.zig"));
     std.testing.refAllDecls(@import("resources/accounts.zig"));
     std.testing.refAllDecls(@import("util/http.zig"));
     std.testing.refAllDecls(@import("util/json.zig"));

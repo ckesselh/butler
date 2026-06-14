@@ -88,9 +88,9 @@ pub fn overview(w: *std.Io.Writer, s: ui.Style) !void {
     try w.print("{s}Run `butler <resource> <verb> --help` for command-specific flags.{s}\n\n", .{ s.dim, s.reset });
 
     try head(w, s, "EXAMPLES");
-    try w.writeAll("  butler postings list --date-from 2026-04-01 --date-to 2026-04-30\n");
+    try w.writeAll("  butler bookings list --date-from 2026-04-01 --date-to 2026-04-30\n");
     try w.writeAll("  butler transactions show 417\n");
-    try w.writeAll("  butler postings create --help\n");
+    try w.writeAll("  butler bookings add --help\n");
 }
 
 /// `butler <resource> [verb] --help` — command-specific help. With no/unknown

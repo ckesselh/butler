@@ -105,7 +105,8 @@ fn fail(gpa: std.mem.Allocator, stderr: *std.Io.Writer, resp: http.Response, sec
     return 1;
 }
 
-fn dataArray(v: std.json.Value) ?[]std.json.Value {
+/// The `data` array of a parsed BHB envelope, or null when absent/non-array.
+pub fn dataArray(v: std.json.Value) ?[]std.json.Value {
     return switch (v) {
         .object => |o| switch (o.get("data") orelse std.json.Value{ .null = {} }) {
             .array => |a| a.items,
@@ -114,6 +115,16 @@ fn dataArray(v: std.json.Value) ?[]std.json.Value {
         else => null,
     };
 }
+
+/// A per-row hook that augments each parsed record with computed fields the API
+/// does not return directly (decoded labels, resolved names). It mutates the
+/// row's object in place; `mode` lets it shape the result per output: in `.table`
+/// mode it overwrites/adds the displayed cells, in `.json` mode it adds sibling
+/// fields beside the raw ones so the enriched body stays a superset of the API's.
+pub const Decorator = struct {
+    ctx: *anyopaque,
+    apply: *const fn (ctx: *anyopaque, gpa: std.mem.Allocator, row: *std.json.ObjectMap, mode: spec.Output) anyerror!void,
+};
 
 /// List rendering: table (with optional substring filter over the columns) or raw JSON.
 pub fn emitList(
@@ -126,6 +137,22 @@ pub fn emitList(
     search: ?[]const u8,
     secret: []const u8,
 ) !u8 {
+    return emitListDecorated(gpa, stdout, stderr, resp, columns, out_mode, search, secret, null);
+}
+
+/// `emitList` plus an optional per-row `Decorator` (see its doc). Kept separate
+/// so the many plain callers stay untouched.
+pub fn emitListDecorated(
+    gpa: std.mem.Allocator,
+    stdout: *std.Io.Writer,
+    stderr: *std.Io.Writer,
+    resp: http.Response,
+    columns: []const []const u8,
+    out_mode: spec.Output,
+    search: ?[]const u8,
+    secret: []const u8,
+    decorator: ?Decorator,
+) !u8 {
     // Parse once; both the success check and the table rendering read from
     // this tree. HTTP 200 + "success": false is how BHB signals most errors —
     // a bare status check would render an auth failure as an empty table,
@@ -136,31 +163,51 @@ pub fn emitList(
     if (resp.status != 200 or parsed == null or !json.envelopeSuccess(parsed.?.value))
         return fail(gpa, stderr, resp, secret);
 
-    // JSON mode echoes the raw body untouched.
-    if (out_mode == .json) {
+    // A response without a data array, or JSON mode with no decorator, is the
+    // raw API body verbatim — nothing to compute or reshape.
+    const arr = dataArray(parsed.?.value);
+    if (arr == null or (out_mode == .json and decorator == null)) {
         try stdout.writeAll(resp.body);
         try stdout.writeByte('\n');
         return 0;
     }
+    const rows = arr.?;
 
-    // An envelope without a data array: echo the raw body — deliberate
-    // degraded output, not error suppression.
-    const arr = dataArray(parsed.?.value) orelse {
-        try stdout.writeAll(resp.body);
+    // Augment each row with computed fields before rendering/serialising, so the
+    // table cells, the filter, and the JSON output all see them. Each row's
+    // ObjectMap is mutated with the allocator that OWNS it — `parsed.arena`, the
+    // arena the rows were parsed into — so a map only ever grows within its own
+    // arena. (That json arena is nested on top of the process arena, which backs
+    // it; using the process `gpa` directly would mutate a map with a different
+    // allocator than created it.)
+    if (decorator) |d| {
+        const row_gpa = parsed.?.arena.allocator();
+        for (rows) |*row| switch (row.*) {
+            .object => |*o| try d.apply(d.ctx, row_gpa, o, out_mode),
+            else => {},
+        };
+    }
+
+    // JSON mode (decorated): emit the enriched envelope. BHB serialises every
+    // value as a string, so re-serialising round-trips amounts/vats unchanged
+    // and only the added sibling fields are new.
+    if (out_mode == .json) {
+        const s = try std.json.Stringify.valueAlloc(gpa, parsed.?.value, .{});
+        try stdout.writeAll(s);
         try stdout.writeByte('\n');
         return 0;
-    };
+    }
 
     // Render the table, optionally filtered by a case-insensitive substring.
     if (search) |term| {
         const needle = try allocFoldLower(gpa, term);
         var filtered: std.ArrayList(std.json.Value) = .empty;
-        for (arr) |row| {
+        for (rows) |row| {
             if (try rowMatches(gpa, row, columns, needle)) try filtered.append(gpa, row);
         }
         try renderTable(gpa, stdout, filtered.items, columns);
     } else {
-        try renderTable(gpa, stdout, arr, columns);
+        try renderTable(gpa, stdout, rows, columns);
     }
     return 0;
 }

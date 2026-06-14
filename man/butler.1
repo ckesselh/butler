@@ -1,4 +1,4 @@
-.TH BUTLER 1 "2026-06-12" "butler 0.1.0" "User Commands"
+.TH BUTLER 1 "2026-06-14" "butler 0.2.0" "User Commands"
 .SH NAME
 butler \- command\-line client for the BuchhaltungsButler (BHB) accounting API
 .SH SYNOPSIS
@@ -17,13 +17,13 @@ for piping into \fBjq\fR.
 .SH RESOURCES
 .TP
 .B transactions
-bank transactions (list, show)
+bank transactions (list, show, book, settle, link, unlink, receipts)
 .TP
 .B receipts
-receipts / documents (list, show, upload, delete)
+receipts / documents (list, show, upload, delete, book, pay)
 .TP
-.B postings
-extended bookings (list, create, unconfirm), alias: bookings
+.B bookings
+bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings
 .TP
 .B accounts
 chart of accounts (list)
@@ -57,6 +57,12 @@ lowest id (exclusive)
 .B \-\-id\-to n
 highest id (exclusive)
 .TP
+.B \-\-unbooked
+only payments with no posting of any class — UI "Ungebucht" (needs the date window)
+.TP
+.B \-\-missing\-receipt
+only payments no posting carries a receipt for — UI "Fehlender Beleg" (needs the date window)
+.TP
 .B \-\-filter text
 case\-insensitive substring over the shown columns
 .TP
@@ -65,6 +71,29 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.PP
+The open\-items filters mirror the "Zahlungen" screen and anti\-join a
+.br
+second /postings/get sweep over the window:
+.br
+  \-\-unbooked         no posting of any class references the payment
+.br
+                     (keys on posting linkage, not receipt assignment, so
+.br
+                     a receipt\-less but booked payment like salary/tax is
+.br
+                     correctly treated as booked).
+.br
+  \-\-missing\-receipt  no posting carries a receipt for the payment — the
+.br
+                     "Fehlender Beleg" case. A superset of \-\-unbooked, since
+.br
+                     an unbooked payment has no receipt either.
+.br
+Because /postings/get caps at 1000 rows, keep the window bounded or items
+.br
+past the cap may show as falsely open.
+.br
 .SS butler transactions show <id>
 .TP
 .B id
@@ -72,6 +101,102 @@ transaction id_by_customer
 .PP
 Show a single transaction by its id_by_customer.
 .br
+.SS butler transactions book <tx> (\-\-account A \-\-amount N \-\-vat V \-\-text T | \-\-from\-json <file>)
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B \-\-from\-json file
+JSON array of {account, postingtext, vat, amount} split lines
+.TP
+.B \-\-account acct
+single line: posting account (e.g. 3841)
+.TP
+.B \-\-amount n
+single line: positive amount, e.g. 9.70
+.TP
+.B \-\-vat code
+single line: vat code
+.br
+values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_2, 7_both_app
+.TP
+.B \-\-text s
+single line: posting text
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Posts directly onto a bank transaction (/postings/add/transaction) — the
+.br
+web UI "book on a payment" action, no receipt involved. The transaction
+.br
+is the contra side, so you give only the account(s) being charged: a
+.br
+single \-\-account books the whole payment, or \-\-from\-json splits it across
+.br
+accounts. New postings land confirmed (see `bookings add`). The booking
+.br
+is a transaction\-class posting, so it shows under `\-\-account
+.br
+"all financial accounts"`, not under "Erweitertes Buchen".
+.br
+.SS butler transactions settle <tx> \-\-receipts <id,id,...> [\-\-dry\-run]
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B \-\-receipts csv
+receipt id_by_customer(s), comma\-separated (required)
+.TP
+.B \-\-dry\-run
+print the derived payload, send nothing
+.PP
+Payment\-first settlement: clears the open items of the listed receipts by
+.br
+posting one creditor\->bank line each, in a single /postings/add/transaction
+.br
+that marks them paid. Use when one payment covers several invoices; the
+.br
+receipt amounts must sum to the transaction (the API rejects a mismatch).
+.br
+For a single receipt, `receipts pay <id> \-\-with <tx>` reads more naturally.
+.br
+.SS butler transactions link <tx> <receipt>
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B receipt
+receipt id_by_customer
+.PP
+A soft pointer (/transactions/assign/receipt): it sets the payment date but
+.br
+does NOT settle — no posting, the receipt stays unpaid. To actually settle, use
+.br
+`transactions settle` / `receipts pay`.
+.br
+.SS butler transactions unlink <tx> <receipt>
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B receipt
+receipt id_by_customer
+.PP
+Inverse of `link`. The API rejects it (error 10) once a confirmed posting
+.br
+exists on the link.
+.br
+.SS butler transactions receipts <tx> [\-\-confirmed\-only]
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B \-\-confirmed\-only
+only confirmed assignments
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
 .SS butler receipts list <inbound|outbound> [flags]
 .TP
 .B inbound|outbound
@@ -101,6 +226,12 @@ include offers
 .B \-\-deleted
 include deleted receipts
 .TP
+.B \-\-unbooked
+only receipts with no posting referencing them — UI "Ungebucht" (needs the date window)
+.TP
+.B \-\-unpaid
+only unpaid receipts — UI "Unbezahlt" (shorthand for \-\-payment\-status unpaid)
+.TP
 .B \-\-filter text
 case\-insensitive substring over the shown columns
 .TP
@@ -109,6 +240,23 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.PP
+Two distinct open\-items filters, matching the "Eingangsbelege" screen:
+.br
+  \-\-unbooked  ("Ungebucht") no posting references the receipt over the
+.br
+              window — a /postings/get sweep + id anti\-join.
+.br
+  \-\-unpaid    ("Unbezahlt") the receipt's own payment status is unpaid
+.br
+              (server\-side; same as \-\-payment\-status unpaid).
+.br
+They are NOT the same: a receipt can be booked yet unpaid, or paid yet
+.br
+(rarely) unbooked. \-\-unbooked caps at /postings/get's 1000 rows, so keep
+.br
+the window bounded.
+.br
 .SS butler receipts show <id> [\-\-direction inbound|outbound]
 .TP
 .B id
@@ -151,6 +299,9 @@ gross amount
 .B \-\-vat\-rate n
 vat rate
 .TP
+.B \-\-credit\-note
+a Gutschrift: send \-\-amount negative (BHB reverses the booking)
+.TP
 .B \-\-dry\-run
 print what would be sent, send nothing
 .SS butler receipts delete <id>
@@ -160,7 +311,80 @@ receipt id_by_customer
 .PP
 Delete a receipt by its id_by_customer.
 .br
-.SS butler postings list \-\-date\-from D \-\-date\-to D [flags]
+.SS butler receipts book <id> (\-\-account A \-\-amount N \-\-vat V \-\-text T | \-\-from\-json <file>) [\-\-creditor C | \-\-debtor D]
+.TP
+.B id
+receipt id_by_customer
+.TP
+.B \-\-from\-json file
+JSON array of {account, postingtext, vat, amount} split lines
+.TP
+.B \-\-account acct
+single line: posting account (e.g. 6815)
+.TP
+.B \-\-amount n
+single line: positive amount, e.g. 36.97
+.TP
+.B \-\-vat code
+single line: vat code
+.br
+values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_2, 7_both_app
+.TP
+.B \-\-text s
+single line: posting text
+.TP
+.B \-\-creditor acct
+creditor Sammelkonto (inbound invoice)
+.TP
+.B \-\-debtor acct
+debtor Sammelkonto (outbound invoice)
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Books a receipt (/postings/add/receipt): the account line(s) for the
+.br
+expense/revenue. The counterparty Sammelkonto defaults to the standard
+.br
+Kreditoren\-Sammelkonto (70000); pass \-\-creditor for a dedicated creditor,
+.br
+or \-\-debtor for an outbound invoice (Debitoren\-Sammelkonto 10000). Then
+.br
+settle it against the payment with `receipts pay <id> \-\-with <tx>`.
+.br
+.SS butler receipts pay <id> \-\-with <tx> [flags]
+.TP
+.B id
+receipt id_by_customer
+.TP
+.B \-\-with tx
+the bank transaction id_by_customer that pays it (required)
+.TP
+.B \-\-amount n
+part\-payment amount (default: the receipt's open amount)
+.TP
+.B \-\-account acct
+override the creditor account (default: from the receipt's booking)
+.TP
+.B \-\-text s
+posting text (default: counterparty + invoice number)
+.TP
+.B \-\-dry\-run
+print the derived payload, send nothing
+.PP
+Mirrors the UI "Beleg einer Zahlung zuordnen": it settles the receipt's
+.br
+open item by posting the creditor\->bank line carrying the receipt
+.br
+(/postings/add/transaction with the receipt as an open item), which marks
+.br
+it paid. The account, amount and text are resolved from the receipt's own
+.br
+booking, so the happy path is just the two ids. This is NOT
+.br
+/transactions/assign/receipt, which only links without settling.
+.br
+.SS butler bookings list \-\-date\-from D \-\-date\-to D [flags]
 .TP
 .B \-\-date\-from YYYY\-MM\-DD
 earliest date (required)
@@ -191,7 +415,26 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
-.SS butler postings create (\-\-from\-json <file> | <line flags>) [flags]
+.PP
+Columns include a decoded `tax`: the posting's numeric tax_key mapped to
+.br
+BHB's documented vat\-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The
+.br
+numeric key is undocumented, so the mapping is a best\-effort, empirically
+.br
+derived bridge — the raw key stays in brackets and an unmapped key shows
+.br
+as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+.br
+`fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
+.br
+(assigned invoice number, or — if none) and `tx` (linked bank
+.br
+transaction id, or —). The debit/credit accounts resolve to "NNNN Name"
+.br
+(table columns; sibling *_name fields under \-\-output json).
+.br
+.SS butler bookings add (\-\-from\-json <file> | <line flags>) [flags]
 .TP
 .B \-\-from\-json file
 JSON array of split lines (see FORMAT)
@@ -225,11 +468,15 @@ assert this account nets to zero before sending
 .B \-\-dry\-run
 print the redacted payload, send nothing
 .PP
-New postings are created CONFIRMED (visible to the API and the web UI,
+This is the FREE booking class ("Erweitertes Buchen") — not anchored to a
+.br
+receipt or transaction; for those see `receipts book` / `transactions book`.
+.br
+New bookings are created CONFIRMED (visible to the API and the web UI,
 .br
 still unfixed so they stay editable/deletable in the UI). To stage one
 .br
-for UI\-only review, unconfirm it afterwards: butler postings unconfirm <id>.
+for UI\-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
 .br
 .PP
 \-\-from\-json FORMAT
@@ -238,14 +485,28 @@ for UI\-only review, unconfirm it afterwards: butler postings unconfirm <id>.
 .br
      "debit":6020,"credit":3790,"vat":"0_none"} , ... ]
 .br
-.SS butler postings unconfirm <id>
+.SS butler bookings unconfirm <id>
 .TP
 .B id
 posting id
 .PP
-Set a free posting back to unconfirmed by its posting id.
+Set a free booking back to unconfirmed by its posting id.
 .br
-.SS butler postings delete [id]
+.SS butler bookings assign <receipt\-id> <posting\-id>
+.TP
+.B receipt\-id
+receipt id_by_customer
+.TP
+.B posting\-id
+posting id_by_customer
+.PP
+Assign a receipt to an existing free booking
+.br
+(/postings/assign/receipt\-to\-free\-posting) — e.g. a booking made before its
+.br
+receipt arrived.
+.br
+.SS butler bookings delete [id]
 .TP
 .B id
 posting id (unused — deletion is web\-UI only)

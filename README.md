@@ -16,10 +16,10 @@ bookkeeping SaaS — list, search, and book entries from your terminal or
 scripts, in an AWS/`gh`-style `resource verb` grammar.
 
 ```console
-$ butler postings list --date-from 2026-05-01 --date-to 2026-05-31 --postingaccount 3790
+$ butler bookings list --date-from 2026-05-01 --date-to 2026-05-31 --postingaccount 3790
 $ butler transactions list --filter ACME
 $ butler receipts show 162
-$ butler postings create --from-json payroll.json --clearing 3790 --dry-run
+$ butler bookings add --from-json booking.json --clearing 3790 --dry-run
 ```
 
 > **Unofficial.** This is an independent client and is not affiliated with or
@@ -37,10 +37,14 @@ a consistent, scriptable interface with `--output json` for piping into `jq`.
 ## Features
 
 - `resource verb` command grammar modelled on `gh` / `az`.
-- Resources: **transactions**, **receipts**, **postings** (alias `bookings`), **accounts**.
-- Read: `list` (with filters), `--filter` substring search, `show <id>`.
-- Write: `create` (single or multi-line split via JSON), `delete`, `upload`, `unconfirm`.
-- `--output table` (aligned) or `--output json` (raw, pipe to `jq`).
+- Resources: **transactions**, **receipts**, **bookings** (alias `postings`), **accounts**.
+- Read: `list` (with filters + open-item filters like `--unbooked` / `--unpaid`),
+  `--filter` substring search, `show <id>`.
+- Write: book a receipt (`receipts book`), a payment (`transactions book`) or a
+  free/split entry (`bookings add`); settle receipts against payments
+  (`receipts pay` / `transactions settle`); `upload`, `delete`, `unconfirm`.
+- `bookings list` decodes the VAT key into its German label and resolves account
+  numbers to names; `--output table` (aligned) or `--output json` (raw, pipe to `jq`).
 - AWS-style profiles and credential precedence (env → file).
 - **Write safety:** `--dry-run` prints the exact request payload (api_key
   redacted) and sends nothing; postings are created **confirmed** but unfixed,
@@ -129,7 +133,7 @@ butler <resource> <verb> [flags]
 
 A required identifier is a positional argument (`show <id>`, `upload <file>`,
 `receipts list <inbound|outbound>`); everything else is a flag. The data
-resources are `transactions`, `receipts`, `postings` (alias `bookings`) and
+resources are `transactions`, `receipts`, `bookings` (alias `postings`) and
 `accounts`; plus `status`, `login` and `logout`.
 
 **Full command reference** — every resource, verb, flag and value — lives in
@@ -140,8 +144,8 @@ cases.
 ### Reading
 
 ```console
-# all postings in May touching the payroll clearing account
-$ butler postings list --date-from 2026-05-01 --date-to 2026-05-31 --postingaccount 3790
+# all bookings in May touching a given clearing account
+$ butler bookings list --date-from 2026-05-01 --date-to 2026-05-31 --postingaccount 3790
 
 # substring search over the listed columns
 $ butler transactions list --filter ACME --date-from 2026-05-01 --date-to 2026-05-31
@@ -158,12 +162,12 @@ $ butler accounts list --filter Verrechnung
 
 ### Writing
 
-A single free posting:
+A single free booking (a manual entry not anchored to a receipt or payment):
 
 ```console
-$ butler postings create \
-    --date 2026-05-31 --debit 6020 --credit 3790 \
-    --amount 5000.00 --vat 0_none --text "Gehalt 05/2026" \
+$ butler bookings add \
+    --date 2026-05-31 --debit 6220 --credit 0540 \
+    --amount 100.00 --vat 0_none --text "Monthly depreciation" \
     --dry-run
 ```
 
@@ -172,31 +176,35 @@ positive — direction comes from the debit/credit pair):
 
 ```json
 [
-  {"date":"2026-05-31","postingtext":"Gehalt 05/2026","amount":"5000.00","debit":6020,"credit":3790,"vat":"0_none"},
-  {"date":"2026-05-31","postingtext":"Auszahlung",     "amount":"5000.00","debit":3790,"credit":3720,"vat":"0_none"}
+  {"date":"2026-05-31","postingtext":"Reclassification","amount":"100.00","debit":6815,"credit":1790,"vat":"0_none"},
+  {"date":"2026-05-31","postingtext":"Reclassification","amount":"100.00","debit":1790,"credit":6820,"vat":"0_none"}
 ]
 ```
 
 ```console
 # preview the exact payloads and verify the clearing account balances to zero
-$ butler postings create --from-json booking.json --clearing 3790 --dry-run
+$ butler bookings add --from-json booking.json --clearing 1790 --dry-run
 
 # send it (created confirmed; review/lock in the web UI)
-$ butler postings create --from-json booking.json --clearing 3790
+$ butler bookings add --from-json booking.json --clearing 1790
 ```
 
 `--clearing <account>` asserts the named account nets to zero across the lines
 before anything is sent. Postings are created **confirmed** (visible to the API
 and the UI, still unfixed so they remain editable/deletable in the UI). To stage
 one for UI-only review instead, unconfirm it afterwards with
-`butler postings unconfirm <id>` — but note that an **unconfirmed posting is
+`butler bookings unconfirm <id>` — but note that an **unconfirmed posting is
 invisible to the API** (BHB ticket 443636), so you can no longer list it.
 
 Upload a receipt:
 
 ```console
 $ butler receipts upload invoice.pdf --type "invoice inbound" \
-    --counterparty "ACME GmbH" --invoice-number INV-123 --date 2026-05-31 --amount -42.00
+    --counterparty "ACME GmbH" --invoice-number INV-123 --date 2026-05-31 --amount 42.00
+
+# a credit note (Gutschrift): --credit-note sends --amount negative
+$ butler receipts upload credit-note.pdf --type "invoice inbound" --credit-note \
+    --counterparty "ACME GmbH" --invoice-number INV-124 --date 2026-05-31 --amount 42.00
 ```
 
 ## Output & exit codes

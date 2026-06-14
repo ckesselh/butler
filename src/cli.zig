@@ -262,8 +262,8 @@ test "validate: missing required and bad choice" {
         try std.testing.expect(f.parse_error != null);
     }
     {
-        var f = try Flags.parse(gpa, &.{ "postings", "create", "--vat", "99_bad" });
-        try f.validate(spec.resolveVerb(cmd, "create").?); // invalid --vat choice
+        var f = try Flags.parse(gpa, &.{ "postings", "add", "--vat", "99_bad" });
+        try f.validate(spec.resolveVerb(cmd, "add").?); // invalid --vat choice
         try std.testing.expect(f.parse_error != null);
     }
 }

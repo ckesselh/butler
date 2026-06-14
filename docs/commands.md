@@ -2,7 +2,7 @@
 
 Generated from `src/spec.zig` by `zig build gen-docs` — do not edit by hand.
 This is the same source the `--help` text and the `man butler` page render
-from. butler 0.1.0.
+from. butler 0.2.0.
 
 ```
 butler <resource> <verb> [flags]
@@ -14,15 +14,23 @@ butler <resource> <verb> [flags]
 - [**transactions**](#transactions)
   - [`list`](#list)
   - [`show`](#show)
-- [**receipts**](#receipts)
+  - [`book`](#book)
+  - [`settle`](#settle)
+  - [`link`](#link)
+  - [`unlink`](#unlink)
+  - [`receipts`](#receipts)
+- [**receipts**](#receipts-1)
   - [`list`](#list-1)
   - [`show`](#show-1)
   - [`upload`](#upload)
   - [`delete`](#delete)
-- [**postings**](#postings)
+  - [`book`](#book-1)
+  - [`pay`](#pay)
+- [**bookings**](#bookings)
   - [`list`](#list-2)
-  - [`create`](#create)
+  - [`add`](#add)
   - [`unconfirm`](#unconfirm)
+  - [`assign`](#assign)
   - [`delete`](#delete-1)
 - [**accounts**](#accounts)
   - [`list`](#list-3)
@@ -46,7 +54,7 @@ butler <resource> <verb> [flags]
 
 ## transactions
 
-bank transactions (list, show)
+bank transactions (list, show, book, settle, link, unlink, receipts)
 
 ### `list`
 
@@ -64,9 +72,23 @@ butler transactions list [flags]
 - `--to-from <text>` — counterparty filter (server-side)
 - `--id-from <n>` — lowest id (exclusive)
 - `--id-to <n>` — highest id (exclusive)
+- `--unbooked` — only payments with no posting of any class — UI "Ungebucht" (needs the date window)
+- `--missing-receipt` — only payments no posting carries a receipt for — UI "Fehlender Beleg" (needs the date window)
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
+
+The open-items filters mirror the "Zahlungen" screen and anti-join a
+second /postings/get sweep over the window:
+  --unbooked         no posting of any class references the payment
+                     (keys on posting linkage, not receipt assignment, so
+                     a receipt-less but booked payment like salary/tax is
+                     correctly treated as booked).
+  --missing-receipt  no posting carries a receipt for the payment — the
+                     "Fehlender Beleg" case. A superset of --unbooked, since
+                     an unbooked payment has no receipt either.
+Because /postings/get caps at 1000 rows, keep the window bounded or items
+past the cap may show as falsely open.
 
 ### `show`
 
@@ -82,11 +104,113 @@ butler transactions show <id>
 
 Show a single transaction by its id_by_customer.
 
+### `book`
+
+book a payment directly onto account(s), no receipt
+
+```
+butler transactions book <tx> (--account A --amount N --vat V --text T | --from-json <file>)
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+
+**Flags:**
+
+- `--from-json <file>` — JSON array of {account, postingtext, vat, amount} split lines
+- `--account <acct>` — single line: posting account (e.g. 3841)
+- `--amount <n>` — single line: positive amount, e.g. 9.70
+- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_2`, `7_both_app`
+- `--text <s>` — single line: posting text
+- `--dry-run` — print the redacted payload, send nothing
+
+Posts directly onto a bank transaction (/postings/add/transaction) — the
+web UI "book on a payment" action, no receipt involved. The transaction
+is the contra side, so you give only the account(s) being charged: a
+single --account books the whole payment, or --from-json splits it across
+accounts. New postings land confirmed (see `bookings add`). The booking
+is a transaction-class posting, so it shows under `--account
+"all financial accounts"`, not under "Erweitertes Buchen".
+
+### `settle`
+
+settle booked receipt(s) against a payment
+
+```
+butler transactions settle <tx> --receipts <id,id,...> [--dry-run]
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+
+**Flags:**
+
+- `--receipts <csv>` — receipt id_by_customer(s), comma-separated *(required)*
+- `--dry-run` — print the derived payload, send nothing
+
+Payment-first settlement: clears the open items of the listed receipts by
+posting one creditor->bank line each, in a single /postings/add/transaction
+that marks them paid. Use when one payment covers several invoices; the
+receipt amounts must sum to the transaction (the API rejects a mismatch).
+For a single receipt, `receipts pay <id> --with <tx>` reads more naturally.
+
+### `link`
+
+link a receipt to a transaction (no booking)
+
+```
+butler transactions link <tx> <receipt>
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+- `receipt` — receipt id_by_customer
+
+A soft pointer (/transactions/assign/receipt): it sets the payment date but
+does NOT settle — no posting, the receipt stays unpaid. To actually settle, use
+`transactions settle` / `receipts pay`.
+
+### `unlink`
+
+remove a receipt link from a transaction
+
+```
+butler transactions unlink <tx> <receipt>
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+- `receipt` — receipt id_by_customer
+
+Inverse of `link`. The API rejects it (error 10) once a confirmed posting
+exists on the link.
+
+### `receipts`
+
+list receipts assigned to a transaction
+
+```
+butler transactions receipts <tx> [--confirmed-only]
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+
+**Flags:**
+
+- `--confirmed-only` — only confirmed assignments
+- `--filter <text>` — case-insensitive substring over the shown columns
+
 ---
 
 ## receipts
 
-receipts / documents (list, show, upload, delete)
+receipts / documents (list, show, upload, delete, book, pay)
 
 ### `list`
 
@@ -110,9 +234,20 @@ butler receipts list <inbound|outbound> [flags]
 - `--due-date <YYYY-MM-DD>` — due-date filter
 - `--include-offers` — include offers
 - `--deleted` — include deleted receipts
+- `--unbooked` — only receipts with no posting referencing them — UI "Ungebucht" (needs the date window)
+- `--unpaid` — only unpaid receipts — UI "Unbezahlt" (shorthand for --payment-status unpaid)
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
+
+Two distinct open-items filters, matching the "Eingangsbelege" screen:
+  --unbooked  ("Ungebucht") no posting references the receipt over the
+              window — a /postings/get sweep + id anti-join.
+  --unpaid    ("Unbezahlt") the receipt's own payment status is unpaid
+              (server-side; same as --payment-status unpaid).
+They are NOT the same: a receipt can be booked yet unpaid, or paid yet
+(rarely) unbooked. --unbooked caps at /postings/get's 1000 rows, so keep
+the window bounded.
 
 ### `show`
 
@@ -156,6 +291,7 @@ butler receipts upload <file> --type <type> [flags]
 - `--date <YYYY-MM-DD>` — document date
 - `--amount <n>` — gross amount
 - `--vat-rate <n>` — vat rate
+- `--credit-note` — a Gutschrift: send --amount negative (BHB reverses the booking)
 - `--dry-run` — print what would be sent, send nothing
 
 ### `delete`
@@ -172,20 +308,76 @@ butler receipts delete <id>
 
 Delete a receipt by its id_by_customer.
 
+### `book`
+
+book a receipt onto account(s)
+
+```
+butler receipts book <id> (--account A --amount N --vat V --text T | --from-json <file>) [--creditor C | --debtor D]
+```
+
+**Arguments:**
+
+- `id` — receipt id_by_customer
+
+**Flags:**
+
+- `--from-json <file>` — JSON array of {account, postingtext, vat, amount} split lines
+- `--account <acct>` — single line: posting account (e.g. 6815)
+- `--amount <n>` — single line: positive amount, e.g. 36.97
+- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_2`, `7_both_app`
+- `--text <s>` — single line: posting text
+- `--creditor <acct>` — creditor Sammelkonto (inbound invoice)
+- `--debtor <acct>` — debtor Sammelkonto (outbound invoice)
+- `--dry-run` — print the redacted payload, send nothing
+
+Books a receipt (/postings/add/receipt): the account line(s) for the
+expense/revenue. The counterparty Sammelkonto defaults to the standard
+Kreditoren-Sammelkonto (70000); pass --creditor for a dedicated creditor,
+or --debtor for an outbound invoice (Debitoren-Sammelkonto 10000). Then
+settle it against the payment with `receipts pay <id> --with <tx>`.
+
+### `pay`
+
+settle a booked receipt against a bank payment
+
+```
+butler receipts pay <id> --with <tx> [flags]
+```
+
+**Arguments:**
+
+- `id` — receipt id_by_customer
+
+**Flags:**
+
+- `--with <tx>` — the bank transaction id_by_customer that pays it *(required)*
+- `--amount <n>` — part-payment amount (default: the receipt's open amount)
+- `--account <acct>` — override the creditor account (default: from the receipt's booking)
+- `--text <s>` — posting text (default: counterparty + invoice number)
+- `--dry-run` — print the derived payload, send nothing
+
+Mirrors the UI "Beleg einer Zahlung zuordnen": it settles the receipt's
+open item by posting the creditor->bank line carrying the receipt
+(/postings/add/transaction with the receipt as an open item), which marks
+it paid. The account, amount and text are resolved from the receipt's own
+booking, so the happy path is just the two ids. This is NOT
+/transactions/assign/receipt, which only links without settling.
+
 ---
 
-## postings
+## bookings
 
-extended bookings (list, create, unconfirm), alias: bookings
+bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings
 
-Aliases: `bookings`
+Aliases: `postings`
 
 ### `list`
 
-list postings (with filters)
+list bookings (with filters)
 
 ```
-butler postings list --date-from D --date-to D [flags]
+butler bookings list --date-from D --date-to D [flags]
 ```
 
 **Flags:**
@@ -201,12 +393,22 @@ butler postings list --date-from D --date-to D [flags]
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
 
-### `create`
+Columns include a decoded `tax`: the posting's numeric tax_key mapped to
+BHB's documented vat-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The
+numeric key is undocumented, so the mapping is a best-effort, empirically
+derived bridge — the raw key stays in brackets and an unmapped key shows
+as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+`fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
+(assigned invoice number, or — if none) and `tx` (linked bank
+transaction id, or —). The debit/credit accounts resolve to "NNNN Name"
+(table columns; sibling *_name fields under --output json).
 
-create a posting / split booking
+### `add`
+
+add a free (extended) booking / split
 
 ```
-butler postings create (--from-json <file> | <line flags>) [flags]
+butler bookings add (--from-json <file> | <line flags>) [flags]
 ```
 
 **Flags:**
@@ -222,9 +424,11 @@ butler postings create (--from-json <file> | <line flags>) [flags]
 - `--clearing <acct>` — assert this account nets to zero before sending
 - `--dry-run` — print the redacted payload, send nothing
 
-New postings are created CONFIRMED (visible to the API and the web UI,
+This is the FREE booking class ("Erweitertes Buchen") — not anchored to a
+receipt or transaction; for those see `receipts book` / `transactions book`.
+New bookings are created CONFIRMED (visible to the API and the web UI,
 still unfixed so they stay editable/deletable in the UI). To stage one
-for UI-only review, unconfirm it afterwards: butler postings unconfirm <id>.
+for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
 
 --from-json FORMAT
   [ {"date":"2026-05-31","postingtext":"...","amount":"5000.00",
@@ -232,24 +436,41 @@ for UI-only review, unconfirm it afterwards: butler postings unconfirm <id>.
 
 ### `unconfirm`
 
-set a posting back to unconfirmed
+set a free booking back to unconfirmed
 
 ```
-butler postings unconfirm <id>
+butler bookings unconfirm <id>
 ```
 
 **Arguments:**
 
 - `id` — posting id
 
-Set a free posting back to unconfirmed by its posting id.
+Set a free booking back to unconfirmed by its posting id.
+
+### `assign`
+
+link a receipt to a free booking
+
+```
+butler bookings assign <receipt-id> <posting-id>
+```
+
+**Arguments:**
+
+- `receipt-id` — receipt id_by_customer
+- `posting-id` — posting id_by_customer
+
+Assign a receipt to an existing free booking
+(/postings/assign/receipt-to-free-posting) — e.g. a booking made before its
+receipt arrived.
 
 ### `delete`
 
 not supported by the BHB API (explains the web-UI path)
 
 ```
-butler postings delete [id]
+butler bookings delete [id]
 ```
 
 **Arguments:**

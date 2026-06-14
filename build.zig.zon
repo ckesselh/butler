@@ -3,7 +3,7 @@
     // The one authoritative version. build.zig injects it into the code
     // (src/spec.zig reads it via the build_options module); package.nix
     // repeats it for Nix and CI asserts the two agree.
-    .version = "0.1.0",
+    .version = "0.2.0",
 
     // The fingerprint is a globally-unique package id. It is generated once
     // by the toolchain and then never changed.
