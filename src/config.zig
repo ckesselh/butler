@@ -218,7 +218,10 @@ pub fn saveProfile(
         error.FileNotFound => {},
         else => return err,
     };
-    errdefer d.deleteFile(io, "credentials.tmp") catch {};
+    // Best-effort rollback of the temp file; nothing to recover if it fails.
+    errdefer d.deleteFile(io, "credentials.tmp") catch |err| switch (err) {
+        else => {},
+    };
     {
         var f = try d.createFile(io, "credentials.tmp", .{ .truncate = true, .permissions = .fromMode(0o600) });
         defer f.close(io);

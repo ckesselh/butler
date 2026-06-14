@@ -18,6 +18,13 @@ const accounts = @import("resources/accounts.zig");
 /// Build version, injected from build.zig.zon via spec.zig.
 pub const version = spec.version;
 
+/// Run a fallible operation for its side effect only, discarding any error.
+/// For best-effort cleanup — flushing on exit, restoring the terminal — where
+/// there is nothing to recover and propagating would mask the real result.
+fn ignoreError(result: anyerror!void) void {
+    result catch return;
+}
+
 pub fn main(init: std.process.Init) !u8 {
     // Buffered stdout/stderr; flushed exactly once on every exit path.
     var stdout_buffer: [4096]u8 = undefined;
@@ -28,14 +35,15 @@ pub fn main(init: std.process.Init) !u8 {
     const stderr = &stderr_writer.interface;
 
     const code = run(init, stdout, stderr) catch |err| {
-        stdout.flush() catch {};
-        stderr.flush() catch {};
+        ignoreError(stdout.flush());
+        ignoreError(stderr.flush());
         return err;
     };
     // A failed stdout flush means the user did not get the output (e.g. a
-    // closed pipe or a full disk) — exit non-zero rather than lie.
+    // closed pipe or a full disk) — exit non-zero rather than lie. A stderr
+    // (diagnostics) flush failure is non-fatal.
     stdout.flush() catch return 1;
-    stderr.flush() catch {};
+    ignoreError(stderr.flush());
     return code;
 }
 
@@ -258,7 +266,7 @@ fn readSecretLine(gpa: std.mem.Allocator, reader: *std.Io.Reader, tty: bool, std
     var noecho = old;
     noecho.lflag.ECHO = false;
     std.posix.tcsetattr(fd, .NOW, noecho) catch return readLine(gpa, reader);
-    defer std.posix.tcsetattr(fd, .NOW, old) catch {};
+    defer ignoreError(std.posix.tcsetattr(fd, .NOW, old));
     const line = try readLine(gpa, reader);
     try stderr.writeAll("\n");
     try stderr.flush();
