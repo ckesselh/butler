@@ -12,7 +12,7 @@ const json = @import("util/json.zig");
 const Client = @import("client.zig").Client;
 const transactions = @import("resources/transactions.zig");
 const receipts = @import("resources/receipts.zig");
-const postings = @import("resources/postings.zig");
+const bookings = @import("resources/bookings.zig");
 const accounts = @import("resources/accounts.zig");
 
 /// Build version, injected from build.zig.zon via spec.zig.
@@ -78,7 +78,7 @@ fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !
         return 0;
     }
 
-    // Resolve the resource (bookings is an alias for postings) and verb.
+    // Resolve the resource (postings is an alias for bookings) and verb.
     const resource = flags.positionals.items[0];
     const verb = flags.pos(1) orelse "";
     const r = std.meta.stringToEnum(spec.Resource, resource) orelse {
@@ -228,7 +228,7 @@ fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !
     const result: anyerror!u8 = switch (r) {
         .transactions => transactions.run(client, verb, &flags, stdout, stderr, out_mode),
         .receipts => receipts.run(client, verb, &flags, stdout, stderr, out_mode),
-        .postings, .bookings => postings.run(client, verb, &flags, stdout, stderr, out_mode),
+        .postings, .bookings => bookings.run(client, verb, &flags, stdout, stderr, out_mode),
         .accounts => accounts.run(client, verb, &flags, stdout, stderr, out_mode),
         .status => doStatus(client, profile, prof.api_client, stdout, stderr, style),
         .login, .logout => unreachable,
@@ -351,7 +351,9 @@ test {
     std.testing.refAllDecls(@import("client.zig"));
     std.testing.refAllDecls(@import("resources/transactions.zig"));
     std.testing.refAllDecls(@import("resources/receipts.zig"));
-    std.testing.refAllDecls(@import("resources/postings.zig"));
+    std.testing.refAllDecls(@import("resources/bookings.zig"));
+    std.testing.refAllDecls(@import("resources/openitems.zig"));
+    std.testing.refAllDecls(@import("resources/postingline.zig"));
     std.testing.refAllDecls(@import("resources/accounts.zig"));
     std.testing.refAllDecls(@import("util/http.zig"));
     std.testing.refAllDecls(@import("util/json.zig"));

@@ -70,6 +70,33 @@ pub const ObjBuilder = struct {
         try self.buf.appendSlice(self.gpa, if (v) "true" else "false");
     }
 
+    /// `"k": ["a","b",...]` with JSON-escaped string elements. The BHB
+    /// receipt/transaction posting endpoints take their per-line fields
+    /// (postingaccounts, vats, amounts, postingtexts) as parallel arrays.
+    pub fn arrStr(self: *ObjBuilder, k: []const u8, vals: []const []const u8) !void {
+        try self.key(k);
+        try self.buf.append(self.gpa, '[');
+        for (vals, 0..) |v, i| {
+            if (i != 0) try self.buf.append(self.gpa, ',');
+            try writeString(self.gpa, &self.buf, v);
+        }
+        try self.buf.append(self.gpa, ']');
+    }
+
+    /// `"k": [null, null, ...]` with `n` JSON nulls. `/postings/add/transaction`
+    /// requires `oi_receipts_ids_by_customer` even when open-item postings are
+    /// off, in which case it is one null per line.
+    pub fn arrNull(self: *ObjBuilder, k: []const u8, n: usize) !void {
+        try self.key(k);
+        try self.buf.append(self.gpa, '[');
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            if (i != 0) try self.buf.append(self.gpa, ',');
+            try self.buf.appendSlice(self.gpa, "null");
+        }
+        try self.buf.append(self.gpa, ']');
+    }
+
     pub fn end(self: *ObjBuilder) !void {
         try self.buf.append(self.gpa, '}');
     }

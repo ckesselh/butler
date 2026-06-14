@@ -5,7 +5,7 @@
 }:
 
 # butler: a command-line wrapper around the BuchhaltungsButler (BHB) accounting
-# API (transactions, receipts, extended/free postings). Single static-ish Zig
+# API (transactions, receipts, bookings). Single static-ish Zig
 # binary, no external Zig package dependencies — it uses only the standard
 # library (std.http.Client for HTTPS, std.json, std.crypto for base64). Because
 # there are no zig package deps, the build is fully offline: nothing is fetched
@@ -35,14 +35,15 @@ stdenv.mkDerivation {
     longDescription = ''
       butler is an AWS/Azure-CLI-style command-line client for the
       BuchhaltungsButler accounting API. It covers transactions, receipts and
-      extended ("free"/split) bookings with list/show, search, create, upload,
-      delete and unconfirm verbs. Authentication combines HTTP Basic (API
-      client id + secret) with an account-level api_key sent in the JSON body;
-      credentials are captured via `butler login` into
-      $XDG_CONFIG_HOME/butler/ (default ~/.config/butler/, mode 0600). New
-      postings are created confirmed but unfixed, so they stay reviewable and
-      editable in the BHB web UI; `butler postings unconfirm` stages one for
-      UI-only review.
+      bookings: list/show with rich decoding, uploading and booking receipts,
+      booking payments directly or as free/split bookings, settling receipts
+      against payments, and open-item discovery (unbooked / unpaid / missing
+      receipt). Authentication combines HTTP Basic (API client id + secret) with
+      an account-level api_key sent in the JSON body; credentials are captured
+      via `butler login` into $XDG_CONFIG_HOME/butler/ (default ~/.config/butler/,
+      mode 0600). New postings are created confirmed but unfixed, so they stay
+      reviewable and editable in the BHB web UI; `butler bookings unconfirm`
+      stages one for UI-only review.
     '';
     homepage = "https://github.com/ckesselh/butler";
     license = lib.licenses.mit;

@@ -23,7 +23,7 @@ assumptions. Where a point was confirmed against the live API it is marked
 - Every response looks like `{ "success": bool, "message": string, "rows": int, "data": [...] }`. **[confirmed]**
 - **`rows` is a COUNT, not the array.** The actual records are under **`data`**.
   Reading `.rows` expecting a list is a common first mistake. **[confirmed]**
-- **All numeric values come back as strings:** `"amount": "6349.90"`,
+- **All numeric values come back as strings:** `"amount": "1234.56"`,
   `"vat": "19.00"`, account numbers `"3790"`. Parse accordingly. **[confirmed]**
 
 ## Postings (`/postings/*`)
@@ -60,7 +60,7 @@ assumptions. Where a point was confirmed against the live API it is marked
   escalated it internally** (2026-04-07). No resolution received as of this
   writing — treat it as a standing API limitation/bug.
   - **Consequence for tooling:** an *unconfirmed* posting is invisible to the
-    API — you cannot list/verify it. So `butler postings create` deliberately
+    API — you cannot list/verify it. So `butler bookings add` deliberately
     leaves new postings *confirmed* (see lifecycle below).
 - **Create / confirm / delete lifecycle** **[verified 2026-06-04]**
   - **A posting created via `/postings/add/free` lands `confirmed` (and
@@ -73,14 +73,36 @@ assumptions. Where a point was confirmed against the live API it is marked
   - **You cannot truly delete a posting via the API** — deletion is **web-UI only**.
   - **No "confirm"/lock (Festschreibung) endpoint exists** — final
     confirming/locking is web-UI only. **[spec]**
-  - **Design choice in `butler`:** `create` leaves new postings **confirmed**
-    (visible to API + UI; still unfixed, so editable/deletable in the UI). To
-    stage one for UI-only review, unconfirm it with a separate
-    `butler postings unconfirm <id>`. (Postings confirmed in a live account are
+  - **Design choice in `butler`:** `bookings add` leaves new postings
+    **confirmed** (visible to API + UI; still unfixed, so editable/deletable in
+    the UI). To stage one for UI-only review, unconfirm it with a separate
+    `butler bookings unconfirm <id>`. (Postings confirmed in a live account are
     likewise `fixed:"0"`/visible — so this matches how existing data looks.)
   - The same behaviour was observed for a real multi-line extended booking
     (split); the live test above used a single free posting. A multi-line split
     is the same `/postings/add/free` per line.
+- **`tax_key` on `/postings/get` rows is an UNDOCUMENTED numeric code.** The spec
+  lists it only with the example value `"1"` — no enum, no meaning. It is the
+  tax-treatment key behind the symbolic `vat` codes above (which ARE documented,
+  each with a German label, in the `/postings/add/free` `vat` parameter
+  description). The numeric key is independent of the chart of accounts (the same
+  across SKR03/SKR04 — account *numbers* differ, the tax key does not). `butler`
+  decodes the observed keys to that documented label — e.g. `9 → "19% Vst."`
+  (domestic input VAT), `19 → "i.g.E. 19% USt./VSt."` (intra-community
+  acquisition), `94 → "§13b 19% USt./VSt."` (reverse charge), `0 → "keine Ust."` —
+  see `src/spec.zig` `tax_keys`. The numeric→symbolic bridge is empirically
+  derived, so the raw key is always shown next to the label and an unknown key
+  renders as unmapped. **[empirical — best-effort, not from the spec]**
+- **Three posting classes; the UI "Erweitertes Buchen" shows only one.** A
+  posting is created by one of three endpoints: `/postings/add/free` (free /
+  extended booking), `/postings/add/receipt` (booked from a receipt), or
+  `/postings/add/transaction` (booked directly on a bank transaction, no
+  receipt). `/postings/get` returns all three; its `account` filter selects the
+  class — `free booking` = free/extended only, `all financial accounts` =
+  transaction/bank-side bookings, `all` (the default) = everything. The UI's
+  "Erweitertes Buchen" corresponds to `free booking`, so a posting made directly
+  on a payment (transaction class) does NOT appear there — it lives under
+  `all financial accounts`. **[confirmed — observed via the account filter]**
 
 ## Get-by-id routes are broken
 
@@ -128,6 +150,15 @@ assumptions. Where a point was confirmed against the live API it is marked
   `receipt_id_by_customer`, `creditor`, `debtor`. **[spec]**
 - **`creditor` and `debtor` are both REQUIRED** (integer Sammelkonto numbers;
   use `0` for the side that does not apply). **[spec]**
+
+## Transaction-linked postings (`/postings/add/transaction`)
+
+- Books directly onto a bank transaction (the contra side), so it takes only the
+  charged `postingaccounts` (parallel `postingtexts`/`vats`/`amounts`) and the
+  scalar `transaction_id_by_customer` — no debit/credit pair. **[spec]**
+- **`oi_receipts_ids_by_customer` is REQUIRED even with open-item postings off.**
+  Send one `null` per line (an array sized to the lines); `butler` does this
+  automatically. **[spec]**
 
 ---
 
