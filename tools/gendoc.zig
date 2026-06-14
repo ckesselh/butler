@@ -18,7 +18,7 @@ const spec = @import("spec");
 /// Last-updated date stamped into the man page's .TH line. Bump on release
 /// alongside the version in build.zig.zon (kept static for reproducible
 /// output — no clock read).
-const doc_date = "2026-06-12";
+const doc_date = "2026-06-14";
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.arena.allocator();
