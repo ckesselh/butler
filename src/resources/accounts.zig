@@ -17,9 +17,14 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
     const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|add|update");
     switch (v) {
         .list => {
-            // Build the query body (paging only).
+            // The chart of accounts = Sachkonten + the base cash/bank accounts.
+            // /settings/get/postingaccounts also bundles the creditor/debtor
+            // Personenkonten; exclude them so `accounts` stays the Sachkonten view
+            // (use `creditors`/`debtors` for those subledgers).
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
+            try o.boolean("exclude_creditors", true);
+            try o.boolean("exclude_debtors", true);
             try json.addIntOpt(&o, "limit", f.opt("limit"));
             try json.addIntOpt(&o, "offset", f.opt("offset"));
             try o.end();
@@ -30,15 +35,17 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
         },
         .show => {
             // Look up one account by its number among what `accounts list`
-            // returns — the same /settings/get/postingaccounts set (Sachkonten
-            // plus the cash/bank accounts), NOT the creditor/debtor subledgers.
-            // There is no get-by-id route, so fetch the list and match the number
-            // client-side, like the other show verbs. The endpoint defaults to
-            // 1000 rows, which silently omits higher-numbered accounts, so ask for
-            // a generous page (matching bookings.zig's chart-of-accounts fetch).
+            // returns — Sachkonten plus the base cash/bank accounts, NOT the
+            // creditor/debtor subledgers (so a creditor number resolves via
+            // `creditors show`, not here). The endpoint has no by-number filter
+            // and no get-by-id route, so fetch the list and match client-side; it
+            // defaults to 1000 rows (which would omit higher-numbered accounts),
+            // so exclude the subledgers and ask for a generous page.
             const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
+            try o.boolean("exclude_creditors", true);
+            try o.boolean("exclude_debtors", true);
             try o.int("limit", 5000);
             try o.end();
 
