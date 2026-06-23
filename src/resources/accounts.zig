@@ -1,6 +1,9 @@
-//! `accounts` resource: the chart of accounts — list, show, add and update
-//! postingaccounts (Sachkonten). Creditor/debtor subledgers live on their own
-//! resources; the API has no account-delete route.
+//! `accounts` resource: the chart of accounts — the ledger view of EVERY numbered
+//! account (Sachkonten, base cash/bank accounts, and the creditor/debtor
+//! Personenkonten). `list` (optionally narrowed by `--type`), `show <number>`,
+//! `add` and `update` postingaccounts (Sachkonten). The richer party master data
+//! (address, IBAN, VAT id) lives on the `creditors`/`debtors` resources; here a
+//! creditor/debtor is just its ledger row. The API has no account-delete route.
 
 const std = @import("std");
 const cli = @import("../cli.zig");
@@ -13,18 +16,40 @@ const cols = [_][]const u8{ "postingaccount_number", "name", "type" };
 
 const Verb = enum { list, show, add, update };
 
+// The account categories /settings/get/postingaccounts can return, each with a
+// matching `exclude_*` request flag. `--type <kind>` keeps one kind by excluding
+// the others; the default (no --type) keeps them all. These are also the spec's
+// `--type` choices (kept in sync there).
+const Kind = struct { name: []const u8, exclude_flag: []const u8 };
+const kinds = [_]Kind{
+    .{ .name = "postingaccount", .exclude_flag = "exclude_postingaccounts" },
+    .{ .name = "account", .exclude_flag = "exclude_accounts" },
+    .{ .name = "creditor", .exclude_flag = "exclude_creditors" },
+    .{ .name = "debtor", .exclude_flag = "exclude_debtors" },
+};
+
+/// Apply the `--type` filter to a postingaccounts query: to keep only `want`,
+/// exclude every other kind. No-op when `want` is null ("all") or "all", so the
+/// full chart comes back. `want` is validated against `kinds` by the spec's
+/// `choices`, so an unknown value never reaches here.
+fn applyTypeFilter(o: *json.ObjBuilder, want: ?[]const u8) !void {
+    const t = want orelse return;
+    if (std.mem.eql(u8, t, "all")) return;
+    for (kinds) |k| {
+        if (!std.mem.eql(u8, k.name, t)) try o.boolean(k.exclude_flag, true);
+    }
+}
+
 pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
     const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|add|update");
     switch (v) {
         .list => {
-            // The chart of accounts = Sachkonten + the base cash/bank accounts.
-            // /settings/get/postingaccounts also bundles the creditor/debtor
-            // Personenkonten; exclude them so `accounts` stays the Sachkonten view
-            // (use `creditors`/`debtors` for those subledgers).
+            // The full chart of accounts: Sachkonten, the base cash/bank accounts,
+            // and the creditor/debtor Personenkonten as ledger rows. `--type`
+            // narrows to one kind (default: all).
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
-            try o.boolean("exclude_creditors", true);
-            try o.boolean("exclude_debtors", true);
+            try applyTypeFilter(&o, f.opt("type"));
             try json.addIntOpt(&o, "limit", f.opt("limit"));
             try json.addIntOpt(&o, "offset", f.opt("offset"));
             try o.end();
@@ -34,18 +59,16 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
         },
         .show => {
-            // Look up one account by its number among what `accounts list`
-            // returns — Sachkonten plus the base cash/bank accounts, NOT the
-            // creditor/debtor subledgers (so a creditor number resolves via
-            // `creditors show`, not here). The endpoint has no by-number filter
-            // and no get-by-id route, so fetch the list and match client-side; it
+            // Look up one account by its number — any kind (Sachkonto or a
+            // creditor/debtor Personenkonto), returning its ledger row. For a
+            // party's master data (address, IBAN, VAT id) use `creditors show` /
+            // `debtors show`. The endpoint has no by-number filter and no
+            // get-by-id route, so fetch the chart and match client-side; it
             // defaults to 1000 rows (which would omit higher-numbered accounts),
-            // so exclude the subledgers and ask for a generous page.
+            // so ask for a generous page.
             const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
-            try o.boolean("exclude_creditors", true);
-            try o.boolean("exclude_debtors", true);
             try o.int("limit", 5000);
             try o.end();
 

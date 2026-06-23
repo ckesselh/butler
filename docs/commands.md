@@ -501,17 +501,29 @@ chart of accounts (list, show, add, update)
 
 ### `list`
 
-list the chart of accounts (postingaccounts)
+list the chart of accounts (all numbered accounts)
 
 ```
-butler accounts list [flags]
+butler accounts list [--type kind] [flags]
 ```
 
 **Flags:**
 
+- `--type <kind>` — filter by account kind (default: all). Values: `all`, `postingaccount`, `account`, `creditor`, `debtor`
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
+
+The full chart of accounts (/settings/get/postingaccounts): every numbered
+account, as a ledger row (number, name, type). This includes the
+creditor/debtor Personenkonten — here they are just ledger accounts; their
+master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
+
+--type narrows to one kind (default all):
+  postingaccount  Sachkonten
+  account         base cash/bank accounts (Kasse, Geschäftskonto, ...)
+  creditor        Kreditoren (incl. the collective account)
+  debtor          Debitoren (incl. the collective account)
 
 ### `show`
 
@@ -525,11 +537,12 @@ butler accounts show <account>
 
 - `account` — postingaccount_number
 
-Look up one account by its number among the chart of accounts
-(/settings/get/postingaccounts) — the same set `accounts list` returns.
-This covers Sachkonten and the cash/bank accounts, NOT creditors or
-debtors; use `creditors show` / `debtors show` for those subledgers.
-The lookup matches client-side (the API has no get-by-id route).
+Look up one account by its number in the chart of accounts
+(/settings/get/postingaccounts) — ANY kind: a Sachkonto, a base cash/bank
+account, or a creditor/debtor Personenkonto (returning its ledger row).
+For a creditor/debtor's master data (address, IBAN, VAT id) use
+`creditors show` / `debtors show`. The lookup matches client-side (the API
+has no get-by-id route).
 
 ### `add`
 

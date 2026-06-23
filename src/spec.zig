@@ -473,9 +473,26 @@ const bookings_verbs = [_]Verb{
 const accounts_verbs = [_]Verb{
     .{
         .name = "list",
-        .summary = "list the chart of accounts (postingaccounts)",
-        .usage = "butler accounts list [flags]",
-        .flags = &.{ filter_flag, limit_flag, offset_flag },
+        .summary = "list the chart of accounts (all numbered accounts)",
+        .usage = "butler accounts list [--type kind] [flags]",
+        .flags = &.{
+            .{ .name = "type", .arg = "kind", .choices = &.{ "all", "postingaccount", "account", "creditor", "debtor" }, .help = "filter by account kind (default: all)" },
+            filter_flag,
+            limit_flag,
+            offset_flag,
+        },
+        .notes =
+        \\The full chart of accounts (/settings/get/postingaccounts): every numbered
+        \\account, as a ledger row (number, name, type). This includes the
+        \\creditor/debtor Personenkonten — here they are just ledger accounts; their
+        \\master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
+        \\
+        \\--type narrows to one kind (default all):
+        \\  postingaccount  Sachkonten
+        \\  account         base cash/bank accounts (Kasse, Geschäftskonto, ...)
+        \\  creditor        Kreditoren (incl. the collective account)
+        \\  debtor          Debitoren (incl. the collective account)
+        ,
     },
     .{
         .name = "show",
@@ -483,11 +500,12 @@ const accounts_verbs = [_]Verb{
         .usage = "butler accounts show <account>",
         .positionals = &.{.{ .name = "account", .help = "postingaccount_number" }},
         .notes =
-        \\Look up one account by its number among the chart of accounts
-        \\(/settings/get/postingaccounts) — the same set `accounts list` returns.
-        \\This covers Sachkonten and the cash/bank accounts, NOT creditors or
-        \\debtors; use `creditors show` / `debtors show` for those subledgers.
-        \\The lookup matches client-side (the API has no get-by-id route).
+        \\Look up one account by its number in the chart of accounts
+        \\(/settings/get/postingaccounts) — ANY kind: a Sachkonto, a base cash/bank
+        \\account, or a creditor/debtor Personenkonto (returning its ledger row).
+        \\For a creditor/debtor's master data (address, IBAN, VAT id) use
+        \\`creditors show` / `debtors show`. The lookup matches client-side (the API
+        \\has no get-by-id route).
         ,
     },
     .{

@@ -173,9 +173,19 @@ assumptions. Where a point was confirmed against the live API it is marked
   `update`, never removed through the API. Cleanup (deletion or deactivation)
   must be done in the BHB web UI. `butler` therefore offers `add`/`update` for
   these resources but no `delete`. **[spec]**
+- **`get/postingaccounts` is the unified chart view:** it returns EVERY numbered
+  account as a ledger row — Sachkonten, the base cash/bank accounts AND the
+  creditor/debtor Personenkonten (plus their collective accounts) — with only
+  `postingaccount_number`, `name`, `type` and `parent`. The per-party master data
+  (address, IBAN, `sales_tax_id`, ...) is NOT here; it lives on
+  `get/creditors` / `get/debtors`. Narrow by category with the
+  `exclude_postingaccounts` / `exclude_accounts` / `exclude_creditors` /
+  `exclude_debtors` booleans (an `exclude_*` drops a type and its collective).
+  **It defaults to 1000 rows** — pass a larger `limit` (butler uses 5000) or it
+  silently omits higher-numbered accounts. **[spec]**
 - **`get` for creditors/debtors paginates (default 25 rows/page);** `butler`
   sweeps every page (advancing the offset by the rows actually returned) unless
-  `--limit` bounds it. `get/postingaccounts` returns the chart in one response.
+  `--limit` bounds it.
 - **`get/creditors` and `get/debtors` have no get-by-id route** (like the other
   resources, see above), so a single-record lookup fetches the list and matches
   `postingaccount_number` client-side. **[spec]**

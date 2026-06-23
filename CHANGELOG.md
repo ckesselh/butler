@@ -13,8 +13,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--offset` in either mode), `--filter` substring search, and `show <account>`
   (matched on `postingaccount_number`, since the API has no get-by-id route).
   Surfaces the account number you pass to `receipts book --creditor` / `--debtor`.
-- `accounts show <account>` — look up a single account by number among the chart
-  of accounts (`accounts list`'s set), not the creditor/debtor subledgers.
+- `accounts show <account>` — look up any account by its number in the chart of
+  accounts (a Sachkonto, a base cash/bank account, or a creditor/debtor
+  Personenkonto, returned as its ledger row); `accounts list --type
+  postingaccount|account|creditor|debtor` narrows the chart (default: all).
 - Create/update master data: `add` and `update` on `creditors`, `debtors` and
   `accounts` (Sachkonten). `--dry-run` echoes the redacted payload. The BHB API
   has **no delete** for any of these — cleanup is web-UI only.

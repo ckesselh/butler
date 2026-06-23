@@ -521,7 +521,12 @@ The BHB API has no posting\-delete endpoint; this command only explains
 .br
 that deletion must happen in the web UI, and exits with a usage error.
 .br
-.SS butler accounts list [flags]
+.SS butler accounts list [\-\-type kind] [flags]
+.TP
+.B \-\-type kind
+filter by account kind (default: all)
+.br
+values: all, postingaccount, account, creditor, debtor
 .TP
 .B \-\-filter text
 case\-insensitive substring over the shown columns
@@ -531,20 +536,42 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.PP
+The full chart of accounts (/settings/get/postingaccounts): every numbered
+.br
+account, as a ledger row (number, name, type). This includes the
+.br
+creditor/debtor Personenkonten — here they are just ledger accounts; their
+.br
+master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
+.br
+.PP
+\-\-type narrows to one kind (default all):
+.br
+  postingaccount  Sachkonten
+.br
+  account         base cash/bank accounts (Kasse, Geschäftskonto, ...)
+.br
+  creditor        Kreditoren (incl. the collective account)
+.br
+  debtor          Debitoren (incl. the collective account)
+.br
 .SS butler accounts show <account>
 .TP
 .B account
 postingaccount_number
 .PP
-Look up one account by its number among the chart of accounts
+Look up one account by its number in the chart of accounts
 .br
-(/settings/get/postingaccounts) — the same set `accounts list` returns.
+(/settings/get/postingaccounts) — ANY kind: a Sachkonto, a base cash/bank
 .br
-This covers Sachkonten and the cash/bank accounts, NOT creditors or
+account, or a creditor/debtor Personenkonto (returning its ledger row).
 .br
-debtors; use `creditors show` / `debtors show` for those subledgers.
+For a creditor/debtor's master data (address, IBAN, VAT id) use
 .br
-The lookup matches client\-side (the API has no get\-by\-id route).
+`creditors show` / `debtors show`. The lookup matches client\-side (the API
+.br
+has no get\-by\-id route).
 .br
 .SS butler accounts add <account> \-\-name <s> \-\-parent <n> [\-\-dry\-run]
 .TP
