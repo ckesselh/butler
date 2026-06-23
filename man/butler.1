@@ -26,7 +26,7 @@ receipts / documents (list, show, upload, delete, book, pay)
 bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings
 .TP
 .B accounts
-chart of accounts (list)
+chart of accounts (list, show)
 .TP
 .B creditors
 creditors / Kreditoren (list, show)
@@ -531,6 +531,21 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.SS butler accounts show <account>
+.TP
+.B account
+postingaccount_number
+.PP
+Look up one account by its number among the chart of accounts
+.br
+(/settings/get/postingaccounts) — the same set `accounts list` returns.
+.br
+This covers Sachkonten and the cash/bank accounts, NOT creditors or
+.br
+debtors; use `creditors show` / `debtors show` for those subledgers.
+.br
+The lookup matches client\-side (the API has no get\-by\-id route).
+.br
 .SS butler creditors list [flags]
 .TP
 .B \-\-filter text

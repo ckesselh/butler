@@ -34,12 +34,13 @@ butler <resource> <verb> [flags]
   - [`delete`](#delete-1)
 - [**accounts**](#accounts)
   - [`list`](#list-3)
+  - [`show`](#show-2)
 - [**creditors**](#creditors)
   - [`list`](#list-4)
-  - [`show`](#show-2)
+  - [`show`](#show-3)
 - [**debtors**](#debtors)
   - [`list`](#list-5)
-  - [`show`](#show-3)
+  - [`show`](#show-4)
 - [**status**](#status)
 - [**login**](#login)
 - [**logout**](#logout)
@@ -490,7 +491,7 @@ that deletion must happen in the web UI, and exits with a usage error.
 
 ## accounts
 
-chart of accounts (list)
+chart of accounts (list, show)
 
 ### `list`
 
@@ -505,6 +506,24 @@ butler accounts list [flags]
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
+
+### `show`
+
+a single account by its number
+
+```
+butler accounts show <account>
+```
+
+**Arguments:**
+
+- `account` — postingaccount_number
+
+Look up one account by its number among the chart of accounts
+(/settings/get/postingaccounts) — the same set `accounts list` returns.
+This covers Sachkonten and the cash/bank accounts, NOT creditors or
+debtors; use `creditors show` / `debtors show` for those subledgers.
+The lookup matches client-side (the API has no get-by-id route).
 
 ---
 

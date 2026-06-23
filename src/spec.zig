@@ -477,6 +477,19 @@ const accounts_verbs = [_]Verb{
         .usage = "butler accounts list [flags]",
         .flags = &.{ filter_flag, limit_flag, offset_flag },
     },
+    .{
+        .name = "show",
+        .summary = "a single account by its number",
+        .usage = "butler accounts show <account>",
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number" }},
+        .notes =
+        \\Look up one account by its number among the chart of accounts
+        \\(/settings/get/postingaccounts) — the same set `accounts list` returns.
+        \\This covers Sachkonten and the cash/bank accounts, NOT creditors or
+        \\debtors; use `creditors show` / `debtors show` for those subledgers.
+        \\The lookup matches client-side (the API has no get-by-id route).
+        ,
+    },
 };
 
 // Shared paging note for the creditor/debtor list verbs: both endpoints default
@@ -535,7 +548,7 @@ pub const commands = [_]Command{
     .{ .name = "transactions", .summary = "bank transactions (list, show, book, settle, link, unlink, receipts)", .verbs = &transactions_verbs },
     .{ .name = "receipts", .summary = "receipts / documents (list, show, upload, delete, book, pay)", .verbs = &receipts_verbs },
     .{ .name = "bookings", .aliases = &.{"postings"}, .summary = "bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings", .verbs = &bookings_verbs },
-    .{ .name = "accounts", .summary = "chart of accounts (list)", .verbs = &accounts_verbs },
+    .{ .name = "accounts", .summary = "chart of accounts (list, show)", .verbs = &accounts_verbs },
     .{ .name = "creditors", .summary = "creditors / Kreditoren (list, show)", .verbs = &creditors_verbs },
     .{ .name = "debtors", .summary = "debtors / Debitoren (list, show)", .verbs = &debtors_verbs },
     .{
