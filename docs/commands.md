@@ -34,6 +34,12 @@ butler <resource> <verb> [flags]
   - [`delete`](#delete-1)
 - [**accounts**](#accounts)
   - [`list`](#list-3)
+- [**creditors**](#creditors)
+  - [`list`](#list-4)
+  - [`show`](#show-2)
+- [**debtors**](#debtors)
+  - [`list`](#list-5)
+  - [`show`](#show-3)
 - [**status**](#status)
 - [**login**](#login)
 - [**logout**](#logout)
@@ -499,6 +505,90 @@ butler accounts list [flags]
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
+
+---
+
+## creditors
+
+creditors / Kreditoren (list, show)
+
+### `list`
+
+list creditors (Kreditoren)
+
+```
+butler creditors list [flags]
+```
+
+**Flags:**
+
+- `--filter <text>` — case-insensitive substring over the shown columns
+- `--limit <n>` — max rows
+- `--offset <n>` — skip the first n rows
+
+Creditor accounts (Kreditoren) from /settings/get/creditors. The dedicated
+creditor account is in `postingaccount_number` — the value you pass to
+`receipts book --creditor`.
+Without --limit butler pages the endpoint to completion (the API defaults to
+25 rows per page); pass --limit for a single bounded page. --offset skips the
+first N rows in either mode.
+
+### `show`
+
+a single creditor by its account number
+
+```
+butler creditors show <account>
+```
+
+**Arguments:**
+
+- `account` — creditor postingaccount_number
+
+Look up one creditor by its account number (postingaccount_number);
+the lookup pages the list endpoint, which has no get-by-id route.
+
+---
+
+## debtors
+
+debtors / Debitoren (list, show)
+
+### `list`
+
+list debtors (Debitoren)
+
+```
+butler debtors list [flags]
+```
+
+**Flags:**
+
+- `--filter <text>` — case-insensitive substring over the shown columns
+- `--limit <n>` — max rows
+- `--offset <n>` — skip the first n rows
+
+Debtor accounts (Debitoren) from /settings/get/debtors. The dedicated
+debtor account is in `postingaccount_number` — the value you pass to
+`receipts book --debtor`.
+Without --limit butler pages the endpoint to completion (the API defaults to
+25 rows per page); pass --limit for a single bounded page. --offset skips the
+first N rows in either mode.
+
+### `show`
+
+a single debtor by its account number
+
+```
+butler debtors show <account>
+```
+
+**Arguments:**
+
+- `account` — debtor postingaccount_number
+
+Look up one debtor by its account number (postingaccount_number);
+the lookup pages the list endpoint, which has no get-by-id route.
 
 ---
 

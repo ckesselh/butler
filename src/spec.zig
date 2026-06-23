@@ -25,7 +25,7 @@ pub const Output = enum { table, json };
 /// `status`, `login` and
 /// `logout` are verb-less commands — login/logout short-circuit in main before
 /// any credentials are loaded.
-pub const Resource = enum { transactions, receipts, postings, bookings, accounts, status, login, logout };
+pub const Resource = enum { transactions, receipts, postings, bookings, accounts, creditors, debtors, status, login, logout };
 
 /// Whether a flag consumes an argv value (`.value`) or is a bare switch
 /// (`.boolean`). Phase-1 parsing keys on this.
@@ -479,11 +479,65 @@ const accounts_verbs = [_]Verb{
     },
 };
 
+// Shared paging note for the creditor/debtor list verbs: both endpoints default
+// to 25 rows per page, so butler sweeps every page unless --limit bounds it.
+const subledger_paging_note =
+    \\Without --limit butler pages the endpoint to completion (the API defaults to
+    \\25 rows per page); pass --limit for a single bounded page. --offset skips the
+    \\first N rows in either mode.
+;
+
+const creditors_verbs = [_]Verb{
+    .{
+        .name = "list",
+        .summary = "list creditors (Kreditoren)",
+        .usage = "butler creditors list [flags]",
+        .flags = &.{ filter_flag, limit_flag, offset_flag },
+        .notes =
+        \\Creditor accounts (Kreditoren) from /settings/get/creditors. The dedicated
+        \\creditor account is in `postingaccount_number` — the value you pass to
+        \\`receipts book --creditor`.
+        \\
+        ++ subledger_paging_note,
+    },
+    .{
+        .name = "show",
+        .summary = "a single creditor by its account number",
+        .usage = "butler creditors show <account>",
+        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number" }},
+        .notes = "Look up one creditor by its account number (postingaccount_number);\nthe lookup pages the list endpoint, which has no get-by-id route.",
+    },
+};
+
+const debtors_verbs = [_]Verb{
+    .{
+        .name = "list",
+        .summary = "list debtors (Debitoren)",
+        .usage = "butler debtors list [flags]",
+        .flags = &.{ filter_flag, limit_flag, offset_flag },
+        .notes =
+        \\Debtor accounts (Debitoren) from /settings/get/debtors. The dedicated
+        \\debtor account is in `postingaccount_number` — the value you pass to
+        \\`receipts book --debtor`.
+        \\
+        ++ subledger_paging_note,
+    },
+    .{
+        .name = "show",
+        .summary = "a single debtor by its account number",
+        .usage = "butler debtors show <account>",
+        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number" }},
+        .notes = "Look up one debtor by its account number (postingaccount_number);\nthe lookup pages the list endpoint, which has no get-by-id route.",
+    },
+};
+
 pub const commands = [_]Command{
     .{ .name = "transactions", .summary = "bank transactions (list, show, book, settle, link, unlink, receipts)", .verbs = &transactions_verbs },
     .{ .name = "receipts", .summary = "receipts / documents (list, show, upload, delete, book, pay)", .verbs = &receipts_verbs },
     .{ .name = "bookings", .aliases = &.{"postings"}, .summary = "bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings", .verbs = &bookings_verbs },
     .{ .name = "accounts", .summary = "chart of accounts (list)", .verbs = &accounts_verbs },
+    .{ .name = "creditors", .summary = "creditors / Kreditoren (list, show)", .verbs = &creditors_verbs },
+    .{ .name = "debtors", .summary = "debtors / Debitoren (list, show)", .verbs = &debtors_verbs },
     .{
         .name = "status",
         .summary = "test API connectivity and show client info",

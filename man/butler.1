@@ -28,6 +28,12 @@ bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings
 .B accounts
 chart of accounts (list)
 .TP
+.B creditors
+creditors / Kreditoren (list, show)
+.TP
+.B debtors
+debtors / Debitoren (list, show)
+.TP
 .B status
 test API connectivity and show client info
 .TP
@@ -525,6 +531,70 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.SS butler creditors list [flags]
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.PP
+Creditor accounts (Kreditoren) from /settings/get/creditors. The dedicated
+.br
+creditor account is in `postingaccount_number` — the value you pass to
+.br
+`receipts book \-\-creditor`.
+.br
+Without \-\-limit butler pages the endpoint to completion (the API defaults to
+.br
+25 rows per page); pass \-\-limit for a single bounded page. \-\-offset skips the
+.br
+first N rows in either mode.
+.br
+.SS butler creditors show <account>
+.TP
+.B account
+creditor postingaccount_number
+.PP
+Look up one creditor by its account number (postingaccount_number);
+.br
+the lookup pages the list endpoint, which has no get\-by\-id route.
+.br
+.SS butler debtors list [flags]
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.PP
+Debtor accounts (Debitoren) from /settings/get/debtors. The dedicated
+.br
+debtor account is in `postingaccount_number` — the value you pass to
+.br
+`receipts book \-\-debtor`.
+.br
+Without \-\-limit butler pages the endpoint to completion (the API defaults to
+.br
+25 rows per page); pass \-\-limit for a single bounded page. \-\-offset skips the
+.br
+first N rows in either mode.
+.br
+.SS butler debtors show <account>
+.TP
+.B account
+debtor postingaccount_number
+.PP
+Look up one debtor by its account number (postingaccount_number);
+.br
+the lookup pages the list endpoint, which has no get\-by\-id route.
+.br
 .SS status
 Probe the BHB API (authenticated) and print the api base, profile, and butler/API
 .br
