@@ -493,8 +493,10 @@ const accounts_verbs = [_]Verb{
         \\  creditor        Kreditoren (incl. the collective account)
         \\  debtor          Debitoren (incl. the collective account)
         \\
-        \\--filter is a case-insensitive substring match (client-side) over the
-        \\shown columns — number, name, type.
+        \\Without --limit butler pages the chart to completion (the endpoint
+        \\defaults to 1000 rows); --limit fetches a single bounded page (with
+        \\--offset). --filter is a case-insensitive substring match (client-side)
+        \\over the shown columns — number, name, type.
         ,
     },
     .{
@@ -606,7 +608,7 @@ const debtor_update_flags = [_]Flag{
 
 // Shared write notes (per resource, with the German label substituted in).
 const creditor_add_note = "Create a creditor via /settings/add/creditor. Only --name is required; omit\n--account to let BHB assign the next free Kreditoren number. The API returns no\nid — re-query with `creditors list --filter` / `creditors show`. No delete\nendpoint exists (see docs/bhb-api-quirks.md).";
-const subledger_update_note = "Pass only the fields you want to change; omitted fields are left untouched.";
+const subledger_update_note = "Pass only the fields you want to change (at least one is required); omitted fields are left untouched.";
 const debtor_add_note = "Create a debtor via /settings/add/debtor. Only --name is required; omit\n--account to let BHB assign the next free Debitoren number. The API returns no\nid — re-query with `debtors list --filter` / `debtors show`. No delete endpoint\nexists (see docs/bhb-api-quirks.md).";
 
 const creditors_verbs = [_]Verb{

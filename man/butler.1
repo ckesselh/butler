@@ -557,9 +557,13 @@ master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
   debtor          Debitoren (incl. the collective account)
 .br
 .PP
-\-\-filter is a case\-insensitive substring match (client\-side) over the
+Without \-\-limit butler pages the chart to completion (the endpoint
 .br
-shown columns — number, name, type.
+defaults to 1000 rows); \-\-limit fetches a single bounded page (with
+.br
+\-\-offset). \-\-filter is a case\-insensitive substring match (client\-side)
+.br
+over the shown columns — number, name, type.
 .br
 .SS butler accounts show <account>
 .TP
@@ -746,7 +750,7 @@ default payment term in days
 .B \-\-dry\-run
 print the redacted payload, send nothing
 .PP
-Update a creditor via /settings/update/creditor. Pass only the fields you want to change; omitted fields are left untouched.
+Update a creditor via /settings/update/creditor. Pass only the fields you want to change (at least one is required); omitted fields are left untouched.
 .br
 .SS butler debtors list [flags]
 .TP
@@ -881,7 +885,7 @@ customer number
 .B \-\-dry\-run
 print the redacted payload, send nothing
 .PP
-Update a debtor via /settings/update/debtor. Pass only the fields you want to change; omitted fields are left untouched.
+Update a debtor via /settings/update/debtor. Pass only the fields you want to change (at least one is required); omitted fields are left untouched.
 .br
 .SS status
 Probe the BHB API (authenticated) and print the api base, profile, and butler/API

@@ -525,8 +525,10 @@ master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
   creditor        Kreditoren (incl. the collective account)
   debtor          Debitoren (incl. the collective account)
 
---filter is a case-insensitive substring match (client-side) over the
-shown columns — number, name, type.
+Without --limit butler pages the chart to completion (the endpoint
+defaults to 1000 rows); --limit fetches a single bounded page (with
+--offset). --filter is a case-insensitive substring match (client-side)
+over the shown columns — number, name, type.
 
 ### `show`
 
@@ -692,7 +694,7 @@ butler creditors update <account> [field flags] [--dry-run]
 - `--due-days <n>` — default payment term in days
 - `--dry-run` — print the redacted payload, send nothing
 
-Update a creditor via /settings/update/creditor. Pass only the fields you want to change; omitted fields are left untouched.
+Update a creditor via /settings/update/creditor. Pass only the fields you want to change (at least one is required); omitted fields are left untouched.
 
 ---
 
@@ -797,7 +799,7 @@ butler debtors update <account> [field flags] [--dry-run]
 - `--customer-number <s>` — customer number
 - `--dry-run` — print the redacted payload, send nothing
 
-Update a debtor via /settings/update/debtor. Pass only the fields you want to change; omitted fields are left untouched.
+Update a debtor via /settings/update/debtor. Pass only the fields you want to change (at least one is required); omitted fields are left untouched.
 
 ---
 
