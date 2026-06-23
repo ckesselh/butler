@@ -14,6 +14,8 @@ const transactions = @import("resources/transactions.zig");
 const receipts = @import("resources/receipts.zig");
 const bookings = @import("resources/bookings.zig");
 const accounts = @import("resources/accounts.zig");
+const creditors = @import("resources/creditors.zig");
+const debtors = @import("resources/debtors.zig");
 
 /// Build version, injected from build.zig.zon via spec.zig.
 pub const version = spec.version;
@@ -238,6 +240,8 @@ fn run(init: std.process.Init, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !
         .receipts => receipts.run(client, verb, &flags, stdout, stderr, out_mode),
         .postings, .bookings => bookings.run(client, verb, &flags, stdout, stderr, out_mode),
         .accounts => accounts.run(client, verb, &flags, stdout, stderr, out_mode),
+        .creditors => creditors.run(client, verb, &flags, stdout, stderr, out_mode),
+        .debtors => debtors.run(client, verb, &flags, stdout, stderr, out_mode),
         .status => doStatus(client, profile, prof.api_client, stdout, stderr, style),
         .login, .logout => unreachable,
     };
@@ -363,6 +367,10 @@ test {
     std.testing.refAllDecls(@import("resources/openitems.zig"));
     std.testing.refAllDecls(@import("resources/postingline.zig"));
     std.testing.refAllDecls(@import("resources/accounts.zig"));
+    std.testing.refAllDecls(@import("resources/settings_paged.zig"));
+    std.testing.refAllDecls(@import("resources/subledger.zig"));
+    std.testing.refAllDecls(@import("resources/creditors.zig"));
+    std.testing.refAllDecls(@import("resources/debtors.zig"));
     std.testing.refAllDecls(@import("util/http.zig"));
     std.testing.refAllDecls(@import("util/json.zig"));
     std.testing.refAllDecls(@import("util/money.zig"));

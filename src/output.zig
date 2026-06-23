@@ -212,8 +212,9 @@ pub fn emitListDecorated(
     return 0;
 }
 
-/// Single-record rendering. If `match_id` is given, pick the row whose
-/// id_by_customer equals it (so we never show the wrong record); else row 0.
+/// Single-record rendering keyed on `id_by_customer`. If `match_id` is given,
+/// pick the row whose id_by_customer equals it (so we never show the wrong
+/// record); else row 0.
 pub fn emitShow(
     gpa: std.mem.Allocator,
     stdout: *std.Io.Writer,
@@ -223,7 +224,22 @@ pub fn emitShow(
     match_id: ?[]const u8,
     secret: []const u8,
 ) !u8 {
-    return (try tryEmitShow(gpa, stdout, stderr, resp, out_mode, match_id, secret)) orelse {
+    return emitShowBy(gpa, stdout, stderr, resp, out_mode, "id_by_customer", match_id, secret);
+}
+
+/// `emitShow`, but matching on an arbitrary `match_field` — e.g. resources
+/// without an `id_by_customer` (creditors/debtors key on `postingaccount_number`).
+pub fn emitShowBy(
+    gpa: std.mem.Allocator,
+    stdout: *std.Io.Writer,
+    stderr: *std.Io.Writer,
+    resp: http.Response,
+    out_mode: spec.Output,
+    match_field: []const u8,
+    match_id: ?[]const u8,
+    secret: []const u8,
+) !u8 {
+    return (try tryEmitShowBy(gpa, stdout, stderr, resp, out_mode, match_field, match_id, secret)) orelse {
         try stderr.writeAll("not found.\n");
         return 1;
     };
@@ -241,6 +257,20 @@ pub fn tryEmitShow(
     match_id: ?[]const u8,
     secret: []const u8,
 ) !?u8 {
+    return tryEmitShowBy(gpa, stdout, stderr, resp, out_mode, "id_by_customer", match_id, secret);
+}
+
+/// `tryEmitShow` generalised to match on any `match_field`.
+pub fn tryEmitShowBy(
+    gpa: std.mem.Allocator,
+    stdout: *std.Io.Writer,
+    stderr: *std.Io.Writer,
+    resp: http.Response,
+    out_mode: spec.Output,
+    match_field: []const u8,
+    match_id: ?[]const u8,
+    secret: []const u8,
+) !?u8 {
     // Parse once; see emitList for why success:false and unparseable bodies
     // are failures.
     const parsed: ?std.json.Parsed(std.json.Value) =
@@ -250,15 +280,16 @@ pub fn tryEmitShow(
 
     const arr = dataArray(parsed.?.value) orelse return null;
 
-    // Pick the row matching match_id (by rendered id), else the first row.
+    // Pick the row whose match_field equals match_id (by rendered value), else
+    // the first row.
     var chosen: ?std.json.Value = null;
     if (match_id) |id| {
         for (arr) |row| {
             switch (row) {
                 .object => |o| {
-                    // id_by_customer is a string in some resources, a number in
+                    // The field is a string in some resources, a number in
                     // others — compare via the rendered form.
-                    if (o.get("id_by_customer")) |idv| {
+                    if (o.get(match_field)) |idv| {
                         const rid = try json.valueToAlloc(gpa, idv);
                         if (std.mem.eql(u8, rid, id)) {
                             chosen = row;
@@ -390,6 +421,38 @@ test "tryEmitShow matches the requested id and yields null on a miss" {
     const body2 = try gpa.dupe(u8, "{\"success\":true,\"rows\":1,\"data\":[{\"id_by_customer\":\"416\"}]}");
     const miss = try tryEmitShow(gpa, &out.writer, &errw.writer, .{ .status = 200, .body = body2 }, .table, "999", "sek");
     try std.testing.expectEqual(@as(?u8, null), miss);
+}
+
+test "tryEmitShowBy matches a non-id field (creditors key on postingaccount_number)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const gpa = arena.allocator();
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    var errw: std.Io.Writer.Allocating = .init(gpa);
+    const body = try gpa.dupe(u8, "{\"success\":true,\"rows\":2,\"data\":[{\"postingaccount_number\":\"70001\",\"name\":\"Amazon\"},{\"postingaccount_number\":\"70037\",\"name\":\"Skool.com Inc.\"}]}");
+
+    const hit = try tryEmitShowBy(gpa, &out.writer, &errw.writer, .{ .status = 200, .body = body }, .table, "postingaccount_number", "70037", "sek");
+    try std.testing.expectEqual(@as(?u8, 0), hit);
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "name: Skool.com Inc.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "Amazon") == null);
+
+    // A value that matches no row yields null (so the caller decides), not "not found".
+    const miss = try tryEmitShowBy(gpa, &out.writer, &errw.writer, .{ .status = 200, .body = body }, .table, "postingaccount_number", "70099", "sek");
+    try std.testing.expectEqual(@as(?u8, null), miss);
+
+    // JSON mode emits just the matched object.
+    var jout: std.Io.Writer.Allocating = .init(gpa);
+    const jhit = try tryEmitShowBy(gpa, &jout.writer, &errw.writer, .{ .status = 200, .body = body }, .json, "postingaccount_number", "70037", "sek");
+    try std.testing.expectEqual(@as(?u8, 0), jhit);
+    try std.testing.expect(std.mem.indexOf(u8, jout.written(), "\"postingaccount_number\":\"70037\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, jout.written(), "70001") == null);
+
+    // The emitShowBy wrapper turns a miss into "not found." + exit 1.
+    var nout: std.Io.Writer.Allocating = .init(gpa);
+    var nerr: std.Io.Writer.Allocating = .init(gpa);
+    const code = try emitShowBy(gpa, &nout.writer, &nerr.writer, .{ .status = 200, .body = body }, .table, "postingaccount_number", "70099", "sek");
+    try std.testing.expectEqual(@as(u8, 1), code);
+    try std.testing.expect(std.mem.indexOf(u8, nerr.written(), "not found.") != null);
 }
 
 test "allocFoldLower folds ASCII and Latin-1" {

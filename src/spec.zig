@@ -25,7 +25,7 @@ pub const Output = enum { table, json };
 /// `status`, `login` and
 /// `logout` are verb-less commands — login/logout short-circuit in main before
 /// any credentials are loaded.
-pub const Resource = enum { transactions, receipts, postings, bookings, accounts, status, login, logout };
+pub const Resource = enum { transactions, receipts, postings, bookings, accounts, creditors, debtors, status, login, logout };
 
 /// Whether a flag consumes an argv value (`.value`) or is a bare switch
 /// (`.boolean`). Phase-1 parsing keys on this.
@@ -473,9 +473,215 @@ const bookings_verbs = [_]Verb{
 const accounts_verbs = [_]Verb{
     .{
         .name = "list",
-        .summary = "list the chart of accounts (postingaccounts)",
-        .usage = "butler accounts list [flags]",
+        .summary = "list the chart of accounts (all numbered accounts)",
+        .usage = "butler accounts list [--type kind] [flags]",
+        .flags = &.{
+            .{ .name = "type", .arg = "kind", .choices = &.{ "all", "postingaccount", "account", "creditor", "debtor" }, .help = "filter by account kind (default: all)" },
+            filter_flag,
+            limit_flag,
+            offset_flag,
+        },
+        .notes =
+        \\The full chart of accounts (/settings/get/postingaccounts): every numbered
+        \\account, as a ledger row (number, name, type). This includes the
+        \\creditor/debtor Personenkonten — here they are just ledger accounts; their
+        \\master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
+        \\
+        \\--type narrows to one kind (default all):
+        \\  postingaccount  Sachkonten
+        \\  account         base cash/bank accounts (Kasse, Geschäftskonto, ...)
+        \\  creditor        Kreditoren (incl. the collective account)
+        \\  debtor          Debitoren (incl. the collective account)
+        \\
+        \\Without --limit butler pages the chart to completion (the endpoint
+        \\defaults to 1000 rows); --limit fetches a single bounded page (with
+        \\--offset). --filter is a case-insensitive substring match (client-side)
+        \\over the shown columns — number, name, type.
+        ,
+    },
+    .{
+        .name = "show",
+        .summary = "a single account by its number",
+        .usage = "butler accounts show <account>",
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number" }},
+        .notes =
+        \\Look up one account by its number in the chart of accounts
+        \\(/settings/get/postingaccounts) — ANY kind: a Sachkonto, a base cash/bank
+        \\account, or a creditor/debtor Personenkonto (returning its ledger row).
+        \\For a creditor/debtor's master data (address, IBAN, VAT id) use
+        \\`creditors show` / `debtors show`. The lookup matches client-side (the API
+        \\has no get-by-id route).
+        ,
+    },
+    .{
+        .name = "add",
+        .summary = "create a postingaccount (Sachkonto)",
+        .usage = "butler accounts add <account> --name <s> --parent <n> [--dry-run]",
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number to create" }},
+        .flags = &.{
+            .{ .name = "name", .required = true, .arg = "s", .help = "account name" },
+            .{ .name = "parent", .required = true, .arg = "n", .int = true, .min = 0, .help = "parent postingaccount_number (the chart node it nests under)" },
+            .{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" },
+        },
+        .notes =
+        \\Create a Sachkonto via /settings/add/postingaccount. The account number,
+        \\--name and --parent (the chart node it nests under) are all required.
+        \\No delete endpoint exists (see docs/bhb-api-quirks.md).
+        ,
+    },
+    .{
+        .name = "update",
+        .summary = "rename a postingaccount by its number",
+        .usage = "butler accounts update <account> --name <s> [--dry-run]",
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number" }},
+        .flags = &.{
+            .{ .name = "name", .required = true, .arg = "s", .help = "new account name" },
+            .{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" },
+        },
+        .notes = "Rename a Sachkonto via /settings/update/postingaccount (name is the only\nupdatable field the API takes here).",
+    },
+};
+
+// Shared paging note for the creditor/debtor list verbs: both endpoints default
+// to 25 rows per page, so butler sweeps every page unless --limit bounds it.
+const subledger_paging_note =
+    \\Without --limit butler pages the endpoint to completion (the API defaults to
+    \\25 rows per page); pass --limit for a single bounded page. --offset skips the
+    \\first n rows in either mode.
+;
+
+// Shared note: what --filter searches on the creditor/debtor list verbs.
+const subledger_filter_note =
+    \\
+    \\
+    \\--filter is a case-insensitive substring match (client-side) over the shown
+    \\columns — number, name, city, VAT-id and IBAN.
+;
+
+// Optional contact/banking fields shared by creditor/debtor `add` and `update`.
+// Each is omitted from the request body when not given, so an update touches
+// only the fields you pass.
+const subledger_contact_flags = [_]Flag{
+    .{ .name = "contact", .arg = "s", .help = "contact person name" },
+    .{ .name = "street", .arg = "s", .help = "street" },
+    .{ .name = "address2", .arg = "s", .help = "additional address line" },
+    .{ .name = "zip", .arg = "s", .help = "postal / ZIP code" },
+    .{ .name = "city", .arg = "s", .help = "city" },
+    .{ .name = "country", .arg = "s", .help = "country" },
+    .{ .name = "vat-id", .arg = "s", .help = "EU VAT id (sales_tax_id)" },
+    .{ .name = "email", .arg = "s", .help = "email address" },
+    .{ .name = "iban", .arg = "s", .help = "IBAN" },
+    .{ .name = "bic", .arg = "s", .help = "BIC" },
+};
+
+const dry_run_flag = Flag{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" };
+
+const creditor_add_flags = [_]Flag{
+    .{ .name = "name", .required = true, .arg = "s", .help = "creditor name" },
+    .{ .name = "account", .arg = "n", .int = true, .min = 0, .help = "postingaccount_number to assign (else auto-assigned)" },
+} ++ subledger_contact_flags ++ [_]Flag{
+    .{ .name = "due-days", .arg = "n", .int = true, .min = 0, .help = "default payment term in days" },
+    dry_run_flag,
+};
+
+const creditor_update_flags = [_]Flag{
+    .{ .name = "name", .arg = "s", .help = "new creditor name" },
+} ++ subledger_contact_flags ++ [_]Flag{
+    .{ .name = "due-days", .arg = "n", .int = true, .min = 0, .help = "default payment term in days" },
+    dry_run_flag,
+};
+
+const debtor_add_flags = [_]Flag{
+    .{ .name = "name", .required = true, .arg = "s", .help = "debtor name" },
+    .{ .name = "account", .arg = "n", .int = true, .min = 0, .help = "postingaccount_number to assign (else auto-assigned)" },
+} ++ subledger_contact_flags ++ [_]Flag{
+    .{ .name = "customer-number", .arg = "s", .help = "customer number" },
+    dry_run_flag,
+};
+
+const debtor_update_flags = [_]Flag{
+    .{ .name = "name", .arg = "s", .help = "new debtor name" },
+} ++ subledger_contact_flags ++ [_]Flag{
+    .{ .name = "customer-number", .arg = "s", .help = "customer number" },
+    dry_run_flag,
+};
+
+// Shared write notes (per resource, with the German label substituted in).
+const creditor_add_note = "Create a creditor via /settings/add/creditor. Only --name is required; omit\n--account to let BHB assign the next free Kreditoren number. The API returns no\nid — re-query with `creditors list --filter` / `creditors show`. No delete\nendpoint exists (see docs/bhb-api-quirks.md).";
+const subledger_update_note = "Pass only the fields you want to change (at least one is required); omitted fields are left untouched.";
+const debtor_add_note = "Create a debtor via /settings/add/debtor. Only --name is required; omit\n--account to let BHB assign the next free Debitoren number. The API returns no\nid — re-query with `debtors list --filter` / `debtors show`. No delete endpoint\nexists (see docs/bhb-api-quirks.md).";
+
+const creditors_verbs = [_]Verb{
+    .{
+        .name = "list",
+        .summary = "list creditors (Kreditoren)",
+        .usage = "butler creditors list [flags]",
         .flags = &.{ filter_flag, limit_flag, offset_flag },
+        .notes =
+        \\Creditor accounts (Kreditoren) from /settings/get/creditors. The dedicated
+        \\creditor account is in `postingaccount_number` — the value you pass to
+        \\`receipts book --creditor`.
+        \\
+        ++ subledger_paging_note ++ subledger_filter_note,
+    },
+    .{
+        .name = "show",
+        .summary = "a single creditor by its account number",
+        .usage = "butler creditors show <account>",
+        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number" }},
+        .notes = "Look up one creditor by its account number (postingaccount_number);\nthe lookup pages the list endpoint, which has no get-by-id route.",
+    },
+    .{
+        .name = "add",
+        .summary = "create a creditor (Kreditor)",
+        .usage = "butler creditors add --name <s> [--account n] [field flags] [--dry-run]",
+        .flags = &creditor_add_flags,
+        .notes = creditor_add_note,
+    },
+    .{
+        .name = "update",
+        .summary = "update a creditor by its account number",
+        .usage = "butler creditors update <account> [field flags] [--dry-run]",
+        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number" }},
+        .flags = &creditor_update_flags,
+        .notes = "Update a creditor via /settings/update/creditor. " ++ subledger_update_note,
+    },
+};
+
+const debtors_verbs = [_]Verb{
+    .{
+        .name = "list",
+        .summary = "list debtors (Debitoren)",
+        .usage = "butler debtors list [flags]",
+        .flags = &.{ filter_flag, limit_flag, offset_flag },
+        .notes =
+        \\Debtor accounts (Debitoren) from /settings/get/debtors. The dedicated
+        \\debtor account is in `postingaccount_number` — the value you pass to
+        \\`receipts book --debtor`.
+        \\
+        ++ subledger_paging_note ++ subledger_filter_note,
+    },
+    .{
+        .name = "show",
+        .summary = "a single debtor by its account number",
+        .usage = "butler debtors show <account>",
+        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number" }},
+        .notes = "Look up one debtor by its account number (postingaccount_number);\nthe lookup pages the list endpoint, which has no get-by-id route.",
+    },
+    .{
+        .name = "add",
+        .summary = "create a debtor (Debitor)",
+        .usage = "butler debtors add --name <s> [--account n] [field flags] [--dry-run]",
+        .flags = &debtor_add_flags,
+        .notes = debtor_add_note,
+    },
+    .{
+        .name = "update",
+        .summary = "update a debtor by its account number",
+        .usage = "butler debtors update <account> [field flags] [--dry-run]",
+        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number" }},
+        .flags = &debtor_update_flags,
+        .notes = "Update a debtor via /settings/update/debtor. " ++ subledger_update_note,
     },
 };
 
@@ -483,7 +689,9 @@ pub const commands = [_]Command{
     .{ .name = "transactions", .summary = "bank transactions (list, show, book, settle, link, unlink, receipts)", .verbs = &transactions_verbs },
     .{ .name = "receipts", .summary = "receipts / documents (list, show, upload, delete, book, pay)", .verbs = &receipts_verbs },
     .{ .name = "bookings", .aliases = &.{"postings"}, .summary = "bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings", .verbs = &bookings_verbs },
-    .{ .name = "accounts", .summary = "chart of accounts (list)", .verbs = &accounts_verbs },
+    .{ .name = "accounts", .summary = "chart of accounts (list, show, add, update)", .verbs = &accounts_verbs },
+    .{ .name = "creditors", .summary = "creditors / Kreditoren (list, show, add, update)", .verbs = &creditors_verbs },
+    .{ .name = "debtors", .summary = "debtors / Debitoren (list, show, add, update)", .verbs = &debtors_verbs },
     .{
         .name = "status",
         .summary = "test API connectivity and show client info",

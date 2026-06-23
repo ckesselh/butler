@@ -26,7 +26,13 @@ receipts / documents (list, show, upload, delete, book, pay)
 bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings
 .TP
 .B accounts
-chart of accounts (list)
+chart of accounts (list, show, add, update)
+.TP
+.B creditors
+creditors / Kreditoren (list, show, add, update)
+.TP
+.B debtors
+debtors / Debitoren (list, show, add, update)
 .TP
 .B status
 test API connectivity and show client info
@@ -515,7 +521,12 @@ The BHB API has no posting\-delete endpoint; this command only explains
 .br
 that deletion must happen in the web UI, and exits with a usage error.
 .br
-.SS butler accounts list [flags]
+.SS butler accounts list [\-\-type kind] [flags]
+.TP
+.B \-\-type kind
+filter by account kind (default: all)
+.br
+values: all, postingaccount, account, creditor, debtor
 .TP
 .B \-\-filter text
 case\-insensitive substring over the shown columns
@@ -525,6 +536,357 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.PP
+The full chart of accounts (/settings/get/postingaccounts): every numbered
+.br
+account, as a ledger row (number, name, type). This includes the
+.br
+creditor/debtor Personenkonten — here they are just ledger accounts; their
+.br
+master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
+.br
+.PP
+\-\-type narrows to one kind (default all):
+.br
+  postingaccount  Sachkonten
+.br
+  account         base cash/bank accounts (Kasse, Geschäftskonto, ...)
+.br
+  creditor        Kreditoren (incl. the collective account)
+.br
+  debtor          Debitoren (incl. the collective account)
+.br
+.PP
+Without \-\-limit butler pages the chart to completion (the endpoint
+.br
+defaults to 1000 rows); \-\-limit fetches a single bounded page (with
+.br
+\-\-offset). \-\-filter is a case\-insensitive substring match (client\-side)
+.br
+over the shown columns — number, name, type.
+.br
+.SS butler accounts show <account>
+.TP
+.B account
+postingaccount_number
+.PP
+Look up one account by its number in the chart of accounts
+.br
+(/settings/get/postingaccounts) — ANY kind: a Sachkonto, a base cash/bank
+.br
+account, or a creditor/debtor Personenkonto (returning its ledger row).
+.br
+For a creditor/debtor's master data (address, IBAN, VAT id) use
+.br
+`creditors show` / `debtors show`. The lookup matches client\-side (the API
+.br
+has no get\-by\-id route).
+.br
+.SS butler accounts add <account> \-\-name <s> \-\-parent <n> [\-\-dry\-run]
+.TP
+.B account
+postingaccount_number to create
+.TP
+.B \-\-name s
+account name (required)
+.TP
+.B \-\-parent n
+parent postingaccount_number (the chart node it nests under) (required)
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Create a Sachkonto via /settings/add/postingaccount. The account number,
+.br
+\-\-name and \-\-parent (the chart node it nests under) are all required.
+.br
+No delete endpoint exists (see docs/bhb\-api\-quirks.md).
+.br
+.SS butler accounts update <account> \-\-name <s> [\-\-dry\-run]
+.TP
+.B account
+postingaccount_number
+.TP
+.B \-\-name s
+new account name (required)
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Rename a Sachkonto via /settings/update/postingaccount (name is the only
+.br
+updatable field the API takes here).
+.br
+.SS butler creditors list [flags]
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.PP
+Creditor accounts (Kreditoren) from /settings/get/creditors. The dedicated
+.br
+creditor account is in `postingaccount_number` — the value you pass to
+.br
+`receipts book \-\-creditor`.
+.br
+Without \-\-limit butler pages the endpoint to completion (the API defaults to
+.br
+25 rows per page); pass \-\-limit for a single bounded page. \-\-offset skips the
+.br
+first n rows in either mode.
+.br
+.PP
+\-\-filter is a case\-insensitive substring match (client\-side) over the shown
+.br
+columns — number, name, city, VAT\-id and IBAN.
+.br
+.SS butler creditors show <account>
+.TP
+.B account
+creditor postingaccount_number
+.PP
+Look up one creditor by its account number (postingaccount_number);
+.br
+the lookup pages the list endpoint, which has no get\-by\-id route.
+.br
+.SS butler creditors add \-\-name <s> [\-\-account n] [field flags] [\-\-dry\-run]
+.TP
+.B \-\-name s
+creditor name (required)
+.TP
+.B \-\-account n
+postingaccount_number to assign (else auto\-assigned)
+.TP
+.B \-\-contact s
+contact person name
+.TP
+.B \-\-street s
+street
+.TP
+.B \-\-address2 s
+additional address line
+.TP
+.B \-\-zip s
+postal / ZIP code
+.TP
+.B \-\-city s
+city
+.TP
+.B \-\-country s
+country
+.TP
+.B \-\-vat\-id s
+EU VAT id (sales_tax_id)
+.TP
+.B \-\-email s
+email address
+.TP
+.B \-\-iban s
+IBAN
+.TP
+.B \-\-bic s
+BIC
+.TP
+.B \-\-due\-days n
+default payment term in days
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Create a creditor via /settings/add/creditor. Only \-\-name is required; omit
+.br
+\-\-account to let BHB assign the next free Kreditoren number. The API returns no
+.br
+id — re\-query with `creditors list \-\-filter` / `creditors show`. No delete
+.br
+endpoint exists (see docs/bhb\-api\-quirks.md).
+.br
+.SS butler creditors update <account> [field flags] [\-\-dry\-run]
+.TP
+.B account
+creditor postingaccount_number
+.TP
+.B \-\-name s
+new creditor name
+.TP
+.B \-\-contact s
+contact person name
+.TP
+.B \-\-street s
+street
+.TP
+.B \-\-address2 s
+additional address line
+.TP
+.B \-\-zip s
+postal / ZIP code
+.TP
+.B \-\-city s
+city
+.TP
+.B \-\-country s
+country
+.TP
+.B \-\-vat\-id s
+EU VAT id (sales_tax_id)
+.TP
+.B \-\-email s
+email address
+.TP
+.B \-\-iban s
+IBAN
+.TP
+.B \-\-bic s
+BIC
+.TP
+.B \-\-due\-days n
+default payment term in days
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Update a creditor via /settings/update/creditor. Pass only the fields you want to change (at least one is required); omitted fields are left untouched.
+.br
+.SS butler debtors list [flags]
+.TP
+.B \-\-filter text
+case\-insensitive substring over the shown columns
+.TP
+.B \-\-limit n
+max rows
+.TP
+.B \-\-offset n
+skip the first n rows
+.PP
+Debtor accounts (Debitoren) from /settings/get/debtors. The dedicated
+.br
+debtor account is in `postingaccount_number` — the value you pass to
+.br
+`receipts book \-\-debtor`.
+.br
+Without \-\-limit butler pages the endpoint to completion (the API defaults to
+.br
+25 rows per page); pass \-\-limit for a single bounded page. \-\-offset skips the
+.br
+first n rows in either mode.
+.br
+.PP
+\-\-filter is a case\-insensitive substring match (client\-side) over the shown
+.br
+columns — number, name, city, VAT\-id and IBAN.
+.br
+.SS butler debtors show <account>
+.TP
+.B account
+debtor postingaccount_number
+.PP
+Look up one debtor by its account number (postingaccount_number);
+.br
+the lookup pages the list endpoint, which has no get\-by\-id route.
+.br
+.SS butler debtors add \-\-name <s> [\-\-account n] [field flags] [\-\-dry\-run]
+.TP
+.B \-\-name s
+debtor name (required)
+.TP
+.B \-\-account n
+postingaccount_number to assign (else auto\-assigned)
+.TP
+.B \-\-contact s
+contact person name
+.TP
+.B \-\-street s
+street
+.TP
+.B \-\-address2 s
+additional address line
+.TP
+.B \-\-zip s
+postal / ZIP code
+.TP
+.B \-\-city s
+city
+.TP
+.B \-\-country s
+country
+.TP
+.B \-\-vat\-id s
+EU VAT id (sales_tax_id)
+.TP
+.B \-\-email s
+email address
+.TP
+.B \-\-iban s
+IBAN
+.TP
+.B \-\-bic s
+BIC
+.TP
+.B \-\-customer\-number s
+customer number
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Create a debtor via /settings/add/debtor. Only \-\-name is required; omit
+.br
+\-\-account to let BHB assign the next free Debitoren number. The API returns no
+.br
+id — re\-query with `debtors list \-\-filter` / `debtors show`. No delete endpoint
+.br
+exists (see docs/bhb\-api\-quirks.md).
+.br
+.SS butler debtors update <account> [field flags] [\-\-dry\-run]
+.TP
+.B account
+debtor postingaccount_number
+.TP
+.B \-\-name s
+new debtor name
+.TP
+.B \-\-contact s
+contact person name
+.TP
+.B \-\-street s
+street
+.TP
+.B \-\-address2 s
+additional address line
+.TP
+.B \-\-zip s
+postal / ZIP code
+.TP
+.B \-\-city s
+city
+.TP
+.B \-\-country s
+country
+.TP
+.B \-\-vat\-id s
+EU VAT id (sales_tax_id)
+.TP
+.B \-\-email s
+email address
+.TP
+.B \-\-iban s
+IBAN
+.TP
+.B \-\-bic s
+BIC
+.TP
+.B \-\-customer\-number s
+customer number
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Update a debtor via /settings/update/debtor. Pass only the fields you want to change (at least one is required); omitted fields are left untouched.
+.br
 .SS status
 Probe the BHB API (authenticated) and print the api base, profile, and butler/API
 .br

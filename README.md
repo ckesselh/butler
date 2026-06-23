@@ -37,12 +37,14 @@ a consistent, scriptable interface with `--output json` for piping into `jq`.
 ## Features
 
 - `resource verb` command grammar modelled on `gh` / `az`.
-- Resources: **transactions**, **receipts**, **bookings** (alias `postings`), **accounts**.
+- Resources: **transactions**, **receipts**, **bookings** (alias `postings`),
+  **accounts**, **creditors**, **debtors**.
 - Read: `list` (with filters + open-item filters like `--unbooked` / `--unpaid`),
   `--filter` substring search, `show <id>`.
 - Write: book a receipt (`receipts book`), a payment (`transactions book`) or a
   free/split entry (`bookings add`); settle receipts against payments
-  (`receipts pay` / `transactions settle`); `upload`, `delete`, `unconfirm`.
+  (`receipts pay` / `transactions settle`); manage master data with `accounts` /
+  `creditors` / `debtors` `add` & `update`; `upload`, `delete`, `unconfirm`.
 - `bookings list` decodes the VAT key into its German label and resolves account
   numbers to names; `--output table` (aligned) or `--output json` (raw, pipe to `jq`).
 - AWS-style profiles and credential precedence (env → file).
@@ -133,8 +135,8 @@ butler <resource> <verb> [flags]
 
 A required identifier is a positional argument (`show <id>`, `upload <file>`,
 `receipts list <inbound|outbound>`); everything else is a flag. The data
-resources are `transactions`, `receipts`, `bookings` (alias `postings`) and
-`accounts`; plus `status`, `login` and `logout`.
+resources are `transactions`, `receipts`, `bookings` (alias `postings`),
+`accounts`, `creditors` and `debtors`; plus `status`, `login` and `logout`.
 
 **Full command reference** — every resource, verb, flag and value — lives in
 **[docs/commands.md](docs/commands.md)**, or run `man butler`, `butler --help`
@@ -158,6 +160,10 @@ $ butler receipts list inbound --date-from 2026-05-01 --date-to 2026-05-31 --out
 
 # the chart of accounts
 $ butler accounts list --filter Verrechnung
+
+# find a creditor's account number (to feed `receipts book --creditor`)
+$ butler creditors list --filter skool
+$ butler creditors show 70037
 ```
 
 ### Writing

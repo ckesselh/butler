@@ -4,6 +4,23 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `creditors` and `debtors` resources for the Personenkonten subledgers:
+  `list` (auto-pages the 25-rows/page endpoint, or `--limit` for one page,
+  `--offset` in either mode), `--filter` substring search, and `show <account>`
+  (matched on `postingaccount_number`, since the API has no get-by-id route).
+  Surfaces the account number you pass to `receipts book --creditor` / `--debtor`.
+- `accounts show <account>` — look up any account by its number in the chart of
+  accounts (a Sachkonto, a base cash/bank account, or a creditor/debtor
+  Personenkonto, returned as its ledger row); `accounts list --type
+  postingaccount|account|creditor|debtor` narrows the chart (default: all).
+- Create/update master data: `add` and `update` on `creditors`, `debtors` and
+  `accounts` (Sachkonten). `--dry-run` echoes the redacted payload. The BHB API
+  has **no delete** for any of these — cleanup is web-UI only.
+
 ## [0.2.0] - 2026-06-14
 
 Turns butler from a read-only client into one you can keep the books with:
