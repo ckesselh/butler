@@ -35,12 +35,18 @@ butler <resource> <verb> [flags]
 - [**accounts**](#accounts)
   - [`list`](#list-3)
   - [`show`](#show-2)
+  - [`add`](#add-1)
+  - [`update`](#update)
 - [**creditors**](#creditors)
   - [`list`](#list-4)
   - [`show`](#show-3)
+  - [`add`](#add-2)
+  - [`update`](#update-1)
 - [**debtors**](#debtors)
   - [`list`](#list-5)
   - [`show`](#show-4)
+  - [`add`](#add-3)
+  - [`update`](#update-2)
 - [**status**](#status)
 - [**login**](#login)
 - [**logout**](#logout)
@@ -491,7 +497,7 @@ that deletion must happen in the web UI, and exits with a usage error.
 
 ## accounts
 
-chart of accounts (list, show)
+chart of accounts (list, show, add, update)
 
 ### `list`
 
@@ -525,11 +531,53 @@ This covers Sachkonten and the cash/bank accounts, NOT creditors or
 debtors; use `creditors show` / `debtors show` for those subledgers.
 The lookup matches client-side (the API has no get-by-id route).
 
+### `add`
+
+create a postingaccount (Sachkonto)
+
+```
+butler accounts add <account> --name <s> --parent <n> [--dry-run]
+```
+
+**Arguments:**
+
+- `account` — postingaccount_number to create
+
+**Flags:**
+
+- `--name <s>` — account name *(required)*
+- `--parent <n>` — parent postingaccount_number (the chart node it nests under) *(required)*
+- `--dry-run` — print the redacted payload, send nothing
+
+Create a Sachkonto via /settings/add/postingaccount. The account number,
+--name and --parent (the chart node it nests under) are all required.
+No delete endpoint exists (see docs/bhb-api-quirks.md).
+
+### `update`
+
+rename a postingaccount by its number
+
+```
+butler accounts update <account> --name <s> [--dry-run]
+```
+
+**Arguments:**
+
+- `account` — postingaccount_number
+
+**Flags:**
+
+- `--name <s>` — new account name *(required)*
+- `--dry-run` — print the redacted payload, send nothing
+
+Rename a Sachkonto via /settings/update/postingaccount (name is the only
+updatable field the API takes here).
+
 ---
 
 ## creditors
 
-creditors / Kreditoren (list, show)
+creditors / Kreditoren (list, show, add, update)
 
 ### `list`
 
@@ -550,7 +598,7 @@ creditor account is in `postingaccount_number` — the value you pass to
 `receipts book --creditor`.
 Without --limit butler pages the endpoint to completion (the API defaults to
 25 rows per page); pass --limit for a single bounded page. --offset skips the
-first N rows in either mode.
+first n rows in either mode.
 
 ### `show`
 
@@ -567,11 +615,71 @@ butler creditors show <account>
 Look up one creditor by its account number (postingaccount_number);
 the lookup pages the list endpoint, which has no get-by-id route.
 
+### `add`
+
+create a creditor (Kreditor)
+
+```
+butler creditors add --name <s> [--account n] [field flags] [--dry-run]
+```
+
+**Flags:**
+
+- `--name <s>` — creditor name *(required)*
+- `--account <n>` — postingaccount_number to assign (else auto-assigned)
+- `--contact <s>` — contact person name
+- `--street <s>` — street
+- `--address2 <s>` — additional address line
+- `--zip <s>` — postal / ZIP code
+- `--city <s>` — city
+- `--country <s>` — country
+- `--vat-id <s>` — EU VAT id (sales_tax_id)
+- `--email <s>` — email address
+- `--iban <s>` — IBAN
+- `--bic <s>` — BIC
+- `--due-days <n>` — default payment term in days
+- `--dry-run` — print the redacted payload, send nothing
+
+Create a creditor via /settings/add/creditor. Only --name is required; omit
+--account to let BHB assign the next free Kreditoren number. The API returns no
+id — re-query with `creditors list --filter` / `creditors show`. No delete
+endpoint exists (see docs/bhb-api-quirks.md).
+
+### `update`
+
+update a creditor by its account number
+
+```
+butler creditors update <account> [field flags] [--dry-run]
+```
+
+**Arguments:**
+
+- `account` — creditor postingaccount_number
+
+**Flags:**
+
+- `--name <s>` — new creditor name
+- `--contact <s>` — contact person name
+- `--street <s>` — street
+- `--address2 <s>` — additional address line
+- `--zip <s>` — postal / ZIP code
+- `--city <s>` — city
+- `--country <s>` — country
+- `--vat-id <s>` — EU VAT id (sales_tax_id)
+- `--email <s>` — email address
+- `--iban <s>` — IBAN
+- `--bic <s>` — BIC
+- `--due-days <n>` — default payment term in days
+- `--dry-run` — print the redacted payload, send nothing
+
+Update a creditor via /settings/update/creditor. Pass only the fields you want to change; omitted fields are left untouched.
+
 ---
 
 ## debtors
 
-debtors / Debitoren (list, show)
+debtors / Debitoren (list, show, add, update)
 
 ### `list`
 
@@ -592,7 +700,7 @@ debtor account is in `postingaccount_number` — the value you pass to
 `receipts book --debtor`.
 Without --limit butler pages the endpoint to completion (the API defaults to
 25 rows per page); pass --limit for a single bounded page. --offset skips the
-first N rows in either mode.
+first n rows in either mode.
 
 ### `show`
 
@@ -608,6 +716,66 @@ butler debtors show <account>
 
 Look up one debtor by its account number (postingaccount_number);
 the lookup pages the list endpoint, which has no get-by-id route.
+
+### `add`
+
+create a debtor (Debitor)
+
+```
+butler debtors add --name <s> [--account n] [field flags] [--dry-run]
+```
+
+**Flags:**
+
+- `--name <s>` — debtor name *(required)*
+- `--account <n>` — postingaccount_number to assign (else auto-assigned)
+- `--contact <s>` — contact person name
+- `--street <s>` — street
+- `--address2 <s>` — additional address line
+- `--zip <s>` — postal / ZIP code
+- `--city <s>` — city
+- `--country <s>` — country
+- `--vat-id <s>` — EU VAT id (sales_tax_id)
+- `--email <s>` — email address
+- `--iban <s>` — IBAN
+- `--bic <s>` — BIC
+- `--customer-number <s>` — customer number
+- `--dry-run` — print the redacted payload, send nothing
+
+Create a debtor via /settings/add/debtor. Only --name is required; omit
+--account to let BHB assign the next free Debitoren number. The API returns no
+id — re-query with `debtors list --filter` / `debtors show`. No delete endpoint
+exists (see docs/bhb-api-quirks.md).
+
+### `update`
+
+update a debtor by its account number
+
+```
+butler debtors update <account> [field flags] [--dry-run]
+```
+
+**Arguments:**
+
+- `account` — debtor postingaccount_number
+
+**Flags:**
+
+- `--name <s>` — new debtor name
+- `--contact <s>` — contact person name
+- `--street <s>` — street
+- `--address2 <s>` — additional address line
+- `--zip <s>` — postal / ZIP code
+- `--city <s>` — city
+- `--country <s>` — country
+- `--vat-id <s>` — EU VAT id (sales_tax_id)
+- `--email <s>` — email address
+- `--iban <s>` — IBAN
+- `--bic <s>` — BIC
+- `--customer-number <s>` — customer number
+- `--dry-run` — print the redacted payload, send nothing
+
+Update a debtor via /settings/update/debtor. Pass only the fields you want to change; omitted fields are left untouched.
 
 ---
 

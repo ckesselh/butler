@@ -160,6 +160,30 @@ assumptions. Where a point was confirmed against the live API it is marked
   Send one `null` per line (an array sized to the lines); `butler` does this
   automatically. **[spec]**
 
+## Accounts & subledgers (`/settings/*`)
+
+- The chart of accounts and the Personenkonten are three parallel `/settings`
+  ledgers: `postingaccounts` (Sachkonten), `creditors` (Kreditoren) and
+  `debtors` (Debitoren). Each has `get`, `add` and `update`
+  (`/settings/{get,add,update}/{postingaccount,creditor,debtor}`), plus an
+  `add-batch` for creditors/debtors. **[spec]**
+- **There is NO delete endpoint for any of them.** The API exposes no
+  `/settings/delete/*` (nor any delete route) for postingaccounts, creditors or
+  debtors — once created, an account/creditor/debtor can only be edited via
+  `update`, never removed through the API. Cleanup (deletion or deactivation)
+  must be done in the BHB web UI. `butler` therefore offers `add`/`update` for
+  these resources but no `delete`. **[spec]**
+- **`get` for creditors/debtors paginates (default 25 rows/page);** `butler`
+  sweeps every page (advancing the offset by the rows actually returned) unless
+  `--limit` bounds it. `get/postingaccounts` returns the chart in one response.
+- **`get/creditors` and `get/debtors` have no get-by-id route** (like the other
+  resources, see above), so a single-record lookup fetches the list and matches
+  `postingaccount_number` client-side. **[spec]**
+- **`add` returns no id** (the same envelope-only quirk as `/postings/add/*`); on
+  creditor/debtor `add` you may omit `postingaccount_number` to have BHB assign
+  the next free one — re-query the list to learn it. `add/postingaccount`
+  requires the number plus a `parent_postingaccount_number`. **[spec]**
+
 ---
 
 *This document reflects the API as observed in 2026 against spec `1.9.1`.
