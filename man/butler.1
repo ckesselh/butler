@@ -556,6 +556,11 @@ master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
 .br
   debtor          Debitoren (incl. the collective account)
 .br
+.PP
+\-\-filter is a case\-insensitive substring match (client\-side) over the
+.br
+shown columns — number, name, type.
+.br
 .SS butler accounts show <account>
 .TP
 .B account
@@ -630,6 +635,11 @@ Without \-\-limit butler pages the endpoint to completion (the API defaults to
 25 rows per page); pass \-\-limit for a single bounded page. \-\-offset skips the
 .br
 first n rows in either mode.
+.br
+.PP
+\-\-filter is a case\-insensitive substring match (client\-side) over the shown
+.br
+columns — number, name, city, VAT\-id and IBAN.
 .br
 .SS butler creditors show <account>
 .TP
@@ -760,6 +770,11 @@ Without \-\-limit butler pages the endpoint to completion (the API defaults to
 25 rows per page); pass \-\-limit for a single bounded page. \-\-offset skips the
 .br
 first n rows in either mode.
+.br
+.PP
+\-\-filter is a case\-insensitive substring match (client\-side) over the shown
+.br
+columns — number, name, city, VAT\-id and IBAN.
 .br
 .SS butler debtors show <account>
 .TP

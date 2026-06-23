@@ -119,6 +119,9 @@ pub fn run(c: Client, ep: Endpoints, verb: []const u8, f: *const cli.Flags, stdo
     const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|add|update");
     switch (v) {
         .list => {
+            // --filter is a case-insensitive client-side substring match over the
+            // shown columns (number, name, city, VAT-id, IBAN). --output json +
+            // --filter is rejected upstream in main.zig.
             // An explicit --limit means "one bounded page" (honouring --offset);
             // without it, page the endpoint to completion so the list is
             // exhaustive — --offset then skips that many rows before the sweep.

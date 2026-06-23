@@ -46,7 +46,9 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
         .list => {
             // The full chart of accounts: Sachkonten, the base cash/bank accounts,
             // and the creditor/debtor Personenkonten as ledger rows. `--type`
-            // narrows to one kind (default: all).
+            // narrows to one kind (default: all); `--filter` is a case-insensitive
+            // client-side substring match over the shown columns (number, name,
+            // type), rejected with --output json upstream in main.zig.
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
             try applyTypeFilter(&o, f.opt("type"));

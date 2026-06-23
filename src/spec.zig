@@ -492,6 +492,9 @@ const accounts_verbs = [_]Verb{
         \\  account         base cash/bank accounts (Kasse, Geschäftskonto, ...)
         \\  creditor        Kreditoren (incl. the collective account)
         \\  debtor          Debitoren (incl. the collective account)
+        \\
+        \\--filter is a case-insensitive substring match (client-side) over the
+        \\shown columns — number, name, type.
         ,
     },
     .{
@@ -543,6 +546,14 @@ const subledger_paging_note =
     \\Without --limit butler pages the endpoint to completion (the API defaults to
     \\25 rows per page); pass --limit for a single bounded page. --offset skips the
     \\first n rows in either mode.
+;
+
+// Shared note: what --filter searches on the creditor/debtor list verbs.
+const subledger_filter_note =
+    \\
+    \\
+    \\--filter is a case-insensitive substring match (client-side) over the shown
+    \\columns — number, name, city, VAT-id and IBAN.
 ;
 
 // Optional contact/banking fields shared by creditor/debtor `add` and `update`.
@@ -609,7 +620,7 @@ const creditors_verbs = [_]Verb{
         \\creditor account is in `postingaccount_number` — the value you pass to
         \\`receipts book --creditor`.
         \\
-        ++ subledger_paging_note,
+        ++ subledger_paging_note ++ subledger_filter_note,
     },
     .{
         .name = "show",
@@ -646,7 +657,7 @@ const debtors_verbs = [_]Verb{
         \\debtor account is in `postingaccount_number` — the value you pass to
         \\`receipts book --debtor`.
         \\
-        ++ subledger_paging_note,
+        ++ subledger_paging_note ++ subledger_filter_note,
     },
     .{
         .name = "show",

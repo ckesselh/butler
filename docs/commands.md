@@ -525,6 +525,9 @@ master data (address, IBAN, VAT id) lives on `creditors` / `debtors`.
   creditor        Kreditoren (incl. the collective account)
   debtor          Debitoren (incl. the collective account)
 
+--filter is a case-insensitive substring match (client-side) over the
+shown columns — number, name, type.
+
 ### `show`
 
 a single account by its number
@@ -612,6 +615,9 @@ creditor account is in `postingaccount_number` — the value you pass to
 Without --limit butler pages the endpoint to completion (the API defaults to
 25 rows per page); pass --limit for a single bounded page. --offset skips the
 first n rows in either mode.
+
+--filter is a case-insensitive substring match (client-side) over the shown
+columns — number, name, city, VAT-id and IBAN.
 
 ### `show`
 
@@ -714,6 +720,9 @@ debtor account is in `postingaccount_number` — the value you pass to
 Without --limit butler pages the endpoint to completion (the API defaults to
 25 rows per page); pass --limit for a single bounded page. --offset skips the
 first n rows in either mode.
+
+--filter is a case-insensitive substring match (client-side) over the shown
+columns — number, name, city, VAT-id and IBAN.
 
 ### `show`
 

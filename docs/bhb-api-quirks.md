@@ -167,6 +167,17 @@ assumptions. Where a point was confirmed against the live API it is marked
   `debtors` (Debitoren). Each has `get`, `add` and `update`
   (`/settings/{get,add,update}/{postingaccount,creditor,debtor}`), plus an
   `add-batch` for creditors/debtors. **[spec]**
+- **Three capabilities these `/settings` resources simply do not offer** — butler
+  works around the first two and cannot offer the third:
+  1. **No search/filter on `get`.** None of the `get` endpoints take a name,
+     number, VAT-id or IBAN filter — only `limit`/`offset` (and, for
+     `postingaccounts`, the `exclude_*` *type* toggles). Narrowing by text is
+     therefore client-side: butler fetches the list and applies `--filter`
+     (case-insensitive substring over the shown columns) itself.
+  2. **No get-by-id / get-one.** There is no route to fetch a single account by
+     its number; `show` fetches the list and matches `postingaccount_number`
+     client-side (the dedicated get-by-id routes 404 across the whole API).
+  3. **No delete** (see the next bullet).
 - **There is NO delete endpoint for any of them.** The API exposes no
   `/settings/delete/*` (nor any delete route) for postingaccounts, creditors or
   debtors — once created, an account/creditor/debtor can only be edited via
