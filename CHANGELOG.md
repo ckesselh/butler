@@ -4,22 +4,29 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-06-23
+
+The aim of this release was to let you work with the accounts, suppliers and
+customers that your bookings refer to, not just the bookings themselves. butler
+can now list and search them, look any one up by its number, and create or edit
+them straight from the command line, so the master data no longer means a trip
+to the web app. The one thing it cannot do is delete them, because the
+accounting service offers no way to.
 
 ### Added
 
-- `creditors` and `debtors` resources for the Personenkonten subledgers:
-  `list` (auto-pages the 25-rows/page endpoint, or `--limit` for one page,
-  `--offset` in either mode), `--filter` substring search, and `show <account>`
-  (matched on `postingaccount_number`, since the API has no get-by-id route).
-  Surfaces the account number you pass to `receipts book --creditor` / `--debtor`.
-- `accounts show <account>` — look up any account by its number in the chart of
-  accounts (a Sachkonto, a base cash/bank account, or a creditor/debtor
-  Personenkonto, returned as its ledger row); `accounts list --type
-  postingaccount|account|creditor|debtor` narrows the chart (default: all).
-- Create/update master data: `add` and `update` on `creditors`, `debtors` and
-  `accounts` (Sachkonten). `--dry-run` echoes the redacted payload. The BHB API
-  has **no delete** for any of these — cleanup is web-UI only.
+- `creditors` and `debtors` commands for your suppliers and customers (Kreditoren
+  and Debitoren): `list` (with a `--filter` search over number, name, city, VAT
+  id and IBAN), `show <account>` to look one up by its number, and `add` /
+  `update` to create or change them (name, address, VAT id, IBAN, payment terms).
+  These are where you find the account number for `receipts book --creditor` /
+  `--debtor`.
+- `accounts` now covers the whole chart of accounts, not only the Sachkonten:
+  `accounts list --type postingaccount|account|creditor|debtor` narrows it
+  (default: all), and `accounts show <number>` looks up any account by its number.
+- `accounts add` and `accounts update` to create and rename ledger accounts.
+- `--dry-run` on every new write command prints the request without sending it.
+  None of these can be deleted, because the API has no delete endpoint.
 
 ## [0.2.0] - 2026-06-14
 
