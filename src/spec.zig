@@ -576,7 +576,7 @@ const dry_run_flag = Flag{ .name = "dry-run", .kind = .boolean, .help = "print t
 
 const creditor_add_flags = [_]Flag{
     .{ .name = "name", .required = true, .arg = "s", .help = "creditor name" },
-    .{ .name = "account", .arg = "n", .help = "postingaccount_number to assign (else auto-assigned)" },
+    .{ .name = "account", .arg = "n", .int = true, .min = 0, .help = "postingaccount_number to assign (else auto-assigned)" },
 } ++ subledger_contact_flags ++ [_]Flag{
     .{ .name = "due-days", .arg = "n", .int = true, .min = 0, .help = "default payment term in days" },
     dry_run_flag,
@@ -591,7 +591,7 @@ const creditor_update_flags = [_]Flag{
 
 const debtor_add_flags = [_]Flag{
     .{ .name = "name", .required = true, .arg = "s", .help = "debtor name" },
-    .{ .name = "account", .arg = "n", .help = "postingaccount_number to assign (else auto-assigned)" },
+    .{ .name = "account", .arg = "n", .int = true, .min = 0, .help = "postingaccount_number to assign (else auto-assigned)" },
 } ++ subledger_contact_flags ++ [_]Flag{
     .{ .name = "customer-number", .arg = "s", .help = "customer number" },
     dry_run_flag,

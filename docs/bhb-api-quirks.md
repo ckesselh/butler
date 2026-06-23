@@ -192,11 +192,13 @@ assumptions. Where a point was confirmed against the live API it is marked
   `get/creditors` / `get/debtors`. Narrow by category with the
   `exclude_postingaccounts` / `exclude_accounts` / `exclude_creditors` /
   `exclude_debtors` booleans (an `exclude_*` drops a type and its collective).
-  **It defaults to 1000 rows** — pass a larger `limit` (butler uses 5000) or it
-  silently omits higher-numbered accounts. **[spec]**
-- **`get` for creditors/debtors paginates (default 25 rows/page);** `butler`
-  sweeps every page (advancing the offset by the rows actually returned) unless
-  `--limit` bounds it.
+  **It defaults to 1000 rows** (a silent truncation if the chart is larger), so
+  `butler` pages it to exhaustion via `limit`/`offset` like the subledger
+  endpoints. **[spec]**
+- **All three `get` endpoints paginate** (postingaccounts default 1000/page,
+  creditors/debtors 25/page); `butler` sweeps every page to completion —
+  advancing the offset by the rows actually returned — unless `--limit` bounds
+  it to a single page.
 - **`get/creditors` and `get/debtors` have no get-by-id route** (like the other
   resources, see above), so a single-record lookup fetches the list and matches
   `postingaccount_number` client-side. **[spec]**

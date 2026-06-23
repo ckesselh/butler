@@ -10,8 +10,10 @@ const cli = @import("../cli.zig");
 const spec = @import("../spec.zig");
 const json = @import("../util/json.zig");
 const output = @import("../output.zig");
+const paged = @import("settings_paged.zig");
 const Client = @import("../client.zig").Client;
 
+const get_path = "/settings/get/postingaccounts";
 const cols = [_][]const u8{ "postingaccount_number", "name", "type" };
 
 const Verb = enum { list, show, add, update };
@@ -28,16 +30,22 @@ const kinds = [_]Kind{
     .{ .name = "debtor", .exclude_flag = "exclude_debtors" },
 };
 
-/// Apply the `--type` filter to a postingaccounts query: to keep only `want`,
-/// exclude every other kind. No-op when `want` is null ("all") or "all", so the
-/// full chart comes back. `want` is validated against `kinds` by the spec's
-/// `choices`, so an unknown value never reaches here.
-fn applyTypeFilter(o: *json.ObjBuilder, want: ?[]const u8) !void {
-    const t = want orelse return;
-    if (std.mem.eql(u8, t, "all")) return;
+/// The `exclude_*` flags that narrow the chart to `--type want`: every kind
+/// EXCEPT the wanted one. Returns an empty slice for null/"all" (full chart).
+/// Fills `buf` (caller-owned, lives for the request) and returns the used prefix.
+/// `want` is validated against `kinds` by the spec's `choices`, so an unknown
+/// value never reaches here.
+fn excludeKeys(want: ?[]const u8, buf: *[kinds.len]([]const u8)) []const []const u8 {
+    const t = want orelse return buf[0..0];
+    if (std.mem.eql(u8, t, "all")) return buf[0..0];
+    var n: usize = 0;
     for (kinds) |k| {
-        if (!std.mem.eql(u8, k.name, t)) try o.boolean(k.exclude_flag, true);
+        if (!std.mem.eql(u8, k.name, t)) {
+            buf[n] = k.exclude_flag;
+            n += 1;
+        }
     }
+    return buf[0..n];
 }
 
 pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
@@ -49,34 +57,52 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             // narrows to one kind (default: all); `--filter` is a case-insensitive
             // client-side substring match over the shown columns (number, name,
             // type), rejected with --output json upstream in main.zig.
-            var o = try json.ObjBuilder.init(c.gpa);
-            try o.str("api_key", c.api_key);
-            try applyTypeFilter(&o, f.opt("type"));
-            try json.addIntOpt(&o, "limit", f.opt("limit"));
-            try json.addIntOpt(&o, "offset", f.opt("offset"));
-            try o.end();
+            var buf: [kinds.len]([]const u8) = undefined;
+            const excludes = excludeKeys(f.opt("type"), &buf);
 
-            var r = try c.post("/settings/get/postingaccounts", o.items());
-            defer r.deinit(c.gpa);
-            return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
+            // An explicit --limit means "one bounded page" (honouring --offset);
+            // without it, page the endpoint to completion (its default is only 1000
+            // rows, which would silently truncate the full chart).
+            if (f.opt("limit") != null) {
+                var o = try json.ObjBuilder.init(c.gpa);
+                try o.str("api_key", c.api_key);
+                for (excludes) |k| try o.boolean(k, true);
+                try json.addIntOpt(&o, "limit", f.opt("limit"));
+                try json.addIntOpt(&o, "offset", f.opt("offset"));
+                try o.end();
+                var r = try c.post(get_path, o.items());
+                defer r.deinit(c.gpa);
+                return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
+            }
+            switch (try paged.fetchAll(c, get_path, paged.startOffset(f), excludes)) {
+                .failed => |resp| {
+                    var r = resp;
+                    defer r.deinit(c.gpa);
+                    return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
+                },
+                .incomplete => return paged.incompleteError(stderr),
+                .merged => |body| return output.emitList(c.gpa, stdout, stderr, .{ .status = 200, .body = body }, &cols, out_mode, f.opt("filter"), c.api_key),
+            }
         },
         .show => {
             // Look up one account by its number — any kind (Sachkonto or a
             // creditor/debtor Personenkonto), returning its ledger row. For a
             // party's master data (address, IBAN, VAT id) use `creditors show` /
             // `debtors show`. The endpoint has no by-number filter and no
-            // get-by-id route, so fetch the chart and match client-side; it
-            // defaults to 1000 rows (which would omit higher-numbered accounts),
-            // so ask for a generous page.
+            // get-by-id route, so page the whole chart and match the canonical
+            // number client-side (so "0540" finds account 540).
             const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
-            var o = try json.ObjBuilder.init(c.gpa);
-            try o.str("api_key", c.api_key);
-            try o.int("limit", 5000);
-            try o.end();
-
-            var r = try c.post("/settings/get/postingaccounts", o.items());
-            defer r.deinit(c.gpa);
-            return output.emitShowBy(c.gpa, stdout, stderr, r, out_mode, "postingaccount_number", acct, c.api_key);
+            const acctn = std.fmt.parseInt(i64, acct, 10) catch return cli.missing(stderr, "<account> to be an integer");
+            const canon = try std.fmt.allocPrint(c.gpa, "{d}", .{acctn});
+            switch (try paged.fetchAll(c, get_path, 0, &.{})) {
+                .failed => |resp| {
+                    var r = resp;
+                    defer r.deinit(c.gpa);
+                    return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, null, c.api_key);
+                },
+                .incomplete => return paged.incompleteError(stderr),
+                .merged => |body| return output.emitShowBy(c.gpa, stdout, stderr, .{ .status = 200, .body = body }, out_mode, "postingaccount_number", canon, c.api_key),
+            }
         },
         .add => return write(c, f, stdout, stderr, false),
         .update => return write(c, f, stdout, stderr, true),

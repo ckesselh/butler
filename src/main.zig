@@ -367,6 +367,7 @@ test {
     std.testing.refAllDecls(@import("resources/openitems.zig"));
     std.testing.refAllDecls(@import("resources/postingline.zig"));
     std.testing.refAllDecls(@import("resources/accounts.zig"));
+    std.testing.refAllDecls(@import("resources/settings_paged.zig"));
     std.testing.refAllDecls(@import("resources/subledger.zig"));
     std.testing.refAllDecls(@import("resources/creditors.zig"));
     std.testing.refAllDecls(@import("resources/debtors.zig"));
