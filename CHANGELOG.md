@@ -4,7 +4,11 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-07-01
+
+A small fix-up release: bookings you make through butler now read back in the
+terminal exactly as they look in the web app, and the `bookings add` help points
+you to the right command up front.
 
 ### Fixed
 
