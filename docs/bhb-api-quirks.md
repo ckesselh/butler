@@ -104,13 +104,64 @@ assumptions. Where a point was confirmed against the live API it is marked
   on a payment (transaction class) does NOT appear there — it lives under
   `all financial accounts`. **[confirmed — observed via the account filter]**
 
-## Get-by-id routes are broken
+## Get-by-id routes are broken (two distinct failure modes)
 
-- **`/transactions/get/id_by_customer` and `/receipts/get/id_by_customer`
-  return HTTP 404 (an HTML page, not a JSON error)** in practice, even though
-  they are listed in the spec. Do not rely on them. **[confirmed]**
-- Workaround: fetch from the corresponding list endpoint and filter. `butler`'s
-  `transactions show <id>` uses the list endpoint's id range (see next point).
+Every `*/get/id_by_customer` route is listed in the spec but does not work; the
+failure differs by route. All observed against base
+`https://webapp.buchhaltungsbutler.de/api/v1`. **[confirmed]**
+
+- **`/transactions/get/id_by_customer` → HTTP 404, an HTML login page**
+  (~6 KB `text/html`), not a JSON error. Reproduce with body
+  `{api_key, id_by_customer:"444"}` for a transaction id that exists.
+- **`/receipts/get/id_by_customer` → HTTP 400, JSON**
+  `{"success":false,"error_code":5,"message":"invalid id_by_customer specified"}`
+  — for **every** id value tried: a valid id, a non-existent id, an
+  out-of-range id, even a non-numeric string; as a JSON string or number; with
+  or without `get_file`; with the field named `id_by_customer`,
+  `receipt_id_by_customer`, or `id`; with or without `list_direction`. The route
+  never accepts an id.
+- **The id is provably valid — a sibling route accepts the same value.** For
+  receipt id `140`:
+  - `/receipts/assigned-transactions/get` with body
+    `{api_key, receipt_id_by_customer:"140"}` → **HTTP 200**, returns the linked
+    transaction.
+  - So the rejection by `/receipts/get/id_by_customer` is that route's own id
+    handling, not a bad id. `id_by_customer` is a plain integer everywhere else
+    in the API (`receipt_id_by_customer`, `transaction_id_by_customer`,
+    `posting_id_by_customer`, `id_by_customer_from`/`_to` — all typed
+    `integer`); there is no special format.
+- **The spec omits the id request parameter** for every `*/get/id_by_customer`,
+  `*/delete/id_by_customer` and `*/restore/id_by_customer` route — only
+  `api_key` (plus `get_file` on the receipts route) is documented. The id is
+  implied by the route name; the receipts route clearly reads a field by that
+  name (its error message names it) yet rejects every value.
+- Workaround: fetch from the corresponding **list** endpoint and filter
+  client-side. `butler`'s `transactions show <id>` uses the list endpoint's id
+  range (see next point).
+
+## Receipt file (PDF) download — no working path
+
+There is no usable way to retrieve a stored receipt file through the API: upload
+works, download does not. **[confirmed]**
+
+- **The documented download is unreachable.** `/receipts/get/id_by_customer`
+  takes `get_file: true` ("the file will be included as a base64 encoded
+  string"; `e_invoice_type` 0 = PDF, 1 = ZUGFeRD, 2 = xRechnung), and its
+  success schema returns `file_content`. But that route rejects every id (see
+  above), so `file_content` can never be obtained.
+- **The list route carries no file and no link.** `/receipts/get` ignores
+  `get_file`; its rows hold only metadata (`filename`, `amount`, `date`,
+  `counterparty`, `account`, …) — no `file_content`, no URL.
+- **The only file URL the API exposes is webapp-session-only.** `/postings/get`
+  rows carry `receipts_links` / `receipts_assigned_links`, e.g.
+  `https://webapp.buchhaltungsbutler.de/receipts/view-pdf/<filename>.pdf`. Under
+  API Basic auth this **301-redirects to `https://app.buchhaltungsbutler.de/login/`
+  (HTTP 200 login page)** — it needs a logged-in browser session cookie, not the
+  API credentials.
+- Net: the file is in BHB (it was uploaded via `/receipts/upload`) but the
+  symmetric read path is gated behind the broken get-by-id route. A working
+  `get_file` on `/receipts/get/id_by_customer`, or a `file_content` field on
+  `/receipts/get`, would close the gap.
 
 ## `id_by_customer_from` / `id_by_customer_to` are BOTH exclusive
 
