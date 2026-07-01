@@ -437,8 +437,14 @@ butler bookings add (--from-json <file> | <line flags>) [flags]
 - `--clearing <acct>` — assert this account nets to zero before sending
 - `--dry-run` — print the redacted payload, send nothing
 
-This is the FREE booking class ("Erweitertes Buchen") — not anchored to a
-receipt or transaction; for those see `receipts book` / `transactions book`.
+Most bookings should NOT use this command. An expense or income tied to
+an invoice is booked with `receipts book`, and one tied to a bank payment
+with `transactions book`, so the posting stays ANCHORED to its receipt or
+transaction and is re-booked / settled / decoded through it. Reach for
+`bookings add` ONLY for a free, standalone entry ("Erweitertes Buchen")
+that has neither a receipt nor a payment — e.g. accruals,
+reclassifications, or opening balances. A free booking cannot be deleted
+via the API (web UI only), so do not use it to experiment.
 New bookings are created CONFIRMED (visible to the API and the web UI,
 still unfixed so they stay editable/deletable in the UI). To stage one
 for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.

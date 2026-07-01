@@ -474,9 +474,21 @@ assert this account nets to zero before sending
 .B \-\-dry\-run
 print the redacted payload, send nothing
 .PP
-This is the FREE booking class ("Erweitertes Buchen") — not anchored to a
+Most bookings should NOT use this command. An expense or income tied to
 .br
-receipt or transaction; for those see `receipts book` / `transactions book`.
+an invoice is booked with `receipts book`, and one tied to a bank payment
+.br
+with `transactions book`, so the posting stays ANCHORED to its receipt or
+.br
+transaction and is re\-booked / settled / decoded through it. Reach for
+.br
+`bookings add` ONLY for a free, standalone entry ("Erweitertes Buchen")
+.br
+that has neither a receipt nor a payment — e.g. accruals,
+.br
+reclassifications, or opening balances. A free booking cannot be deleted
+.br
+via the API (web UI only), so do not use it to experiment.
 .br
 New bookings are created CONFIRMED (visible to the API and the web UI,
 .br

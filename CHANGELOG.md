@@ -4,6 +4,21 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `bookings list` no longer shows the VAT column as `?unmapped` for bookings you
+  made through butler. They now read with the same label the web app shows
+  (e.g. "19% Vst."), so a booked receipt looks the same in the terminal as in
+  the browser.
+
+### Changed
+
+- `bookings add --help` now says up front that an entry tied to an invoice or a
+  payment belongs on `receipts book` / `transactions book`, and that the free
+  booking is only for a standalone entry with neither.
+
 ## [0.3.0] - 2026-06-23
 
 The aim of this release was to let you work with the accounts, suppliers and
