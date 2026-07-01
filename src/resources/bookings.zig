@@ -47,10 +47,15 @@ const ListDecor = struct {
         // tax: documented German label for the numeric tax_key, with the raw key
         // kept in brackets so a wrong or missing mapping can never hide the truth.
         if (json.getStr(row.*, "tax_key")) |k| {
-            const cell = if (spec.taxKeyLabel(k)) |lbl|
-                try std.fmt.allocPrint(gpa, "{s} [{s}]", .{ lbl, k })
-            else
-                try std.fmt.allocPrint(gpa, "[{s}] ?unmapped", .{k});
+            const cell = if (spec.taxKeyLabel(k)) |lbl| cell: {
+                // Account-driven VAT: a "keine Ust." key with a non-zero rate is
+                // VAT carried on the account (e.g. Sachbezug accounts), which BHB
+                // shows as "NN% USt." — trust the rate, keep the raw key visible.
+                if (std.mem.eql(u8, lbl, spec.no_vat_label))
+                    if (spec.vatRatePrefix(json.getStr(row.*, "vat"))) |rate|
+                        break :cell try std.fmt.allocPrint(gpa, "{s}% USt. [{s}]", .{ rate, k });
+                break :cell try std.fmt.allocPrint(gpa, "{s} [{s}]", .{ lbl, k });
+            } else try std.fmt.allocPrint(gpa, "[{s}] ?unmapped", .{k});
             try row.put(gpa, "tax", .{ .string = cell });
         }
 
@@ -74,8 +79,17 @@ const ListDecor = struct {
     // body is a superset of the API's. Added only when known, so a consumer can
     // still rely on the raw tax_key / account numbers when no decode exists.
     fn applyJson(self: *const ListDecor, gpa: std.mem.Allocator, row: *std.json.ObjectMap) !void {
-        if (json.getStr(row.*, "tax_key")) |k| if (spec.taxKeyLabel(k)) |lbl|
-            try row.put(gpa, "tax_label", .{ .string = lbl });
+        if (json.getStr(row.*, "tax_key")) |k| if (spec.taxKeyLabel(k)) |lbl| {
+            // Mirror the table's account-driven-VAT handling (see applyTable).
+            const label = if (std.mem.eql(u8, lbl, spec.no_vat_label))
+                if (spec.vatRatePrefix(json.getStr(row.*, "vat"))) |rate|
+                    try std.fmt.allocPrint(gpa, "{s}% USt.", .{rate})
+                else
+                    lbl
+            else
+                lbl;
+            try row.put(gpa, "tax_label", .{ .string = label });
+        };
         try putNameSibling(gpa, self.accounts, row, "debit_postingaccount_number", "debit_postingaccount_name");
         try putNameSibling(gpa, self.accounts, row, "credit_postingaccount_number", "credit_postingaccount_name");
     }

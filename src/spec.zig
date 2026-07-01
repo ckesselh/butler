@@ -170,6 +170,31 @@ pub fn taxKeyLabel(key: []const u8) ?[]const u8 {
     return null;
 }
 
+/// The label the table uses for a VAT-free posting. Kept as a named constant so
+/// the account-driven-VAT check below compares against exactly one string.
+pub const no_vat_label = "keine Ust.";
+
+/// The integer part of a non-zero VAT rate string, or null when the rate is
+/// missing or zero. "19.00" → "19", "7.00" → "7", "0.00"/"" → null.
+///
+/// Some VAT is ACCOUNT-DRIVEN, not keyed: a few accounts (e.g. "Verrechnete
+/// sonstige Sachbezüge 19/16% USt", used for the geldwerter Vorteil of a company
+/// car or a benefit) carry the rate on the account itself, so BHB returns the
+/// posting with `tax_key` 0 (which decodes to "keine Ust.") yet a non-zero `vat`,
+/// and shows e.g. "19% USt." in its own UI. Callers use this to surface that rate
+/// instead of the misleading "no VAT" label; the raw key still stays visible.
+pub fn vatRatePrefix(vat: ?[]const u8) ?[]const u8 {
+    const v = vat orelse return null;
+    var nonzero = false;
+    for (v) |c| if (c >= '1' and c <= '9') {
+        nonzero = true;
+        break;
+    };
+    if (!nonzero) return null;
+    const dot = std.mem.indexOfScalar(u8, v, '.') orelse v.len;
+    return v[0..dot];
+}
+
 /// Global flags accepted by every command, merged into each verb's set at
 /// validation time. They keep their handling in main.zig; listing them here
 /// makes them known to the parser and auto-documents them.
@@ -884,4 +909,16 @@ test "taxKeyLabel decodes known keys and rejects unknown" {
     // Every table entry's symbolic code must be a real documented vat code, so
     // the label can always be traced back to the spec's vat parameter list.
     for (&tax_keys) |t| try std.testing.expect(isValidVat(t.symbolic));
+}
+
+test "vatRatePrefix surfaces account-driven VAT that tax_key 0 hides" {
+    // Non-zero rates yield their integer part; used when tax_key decodes to
+    // "keine Ust." but the posting carries a rate (Sachbezug accounts).
+    try std.testing.expectEqualStrings("19", vatRatePrefix("19.00").?);
+    try std.testing.expectEqualStrings("7", vatRatePrefix("7.00").?);
+    try std.testing.expectEqualStrings("16", vatRatePrefix("16.00").?);
+    // A truly VAT-free posting (rate 0 / missing) keeps the "keine Ust." label.
+    try std.testing.expect(vatRatePrefix("0.00") == null);
+    try std.testing.expect(vatRatePrefix("") == null);
+    try std.testing.expect(vatRatePrefix(null) == null);
 }

@@ -4,6 +4,16 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `bookings list` now shows the VAT rate for postings whose VAT sits on the
+  account rather than on a tax key, such as the geldwerter Vorteil of a company
+  car or a benefit (booked on a "sonstige Sachbezüge 19/16 % USt" account). These
+  were shown as "keine Ust." even though the web app shows "19% USt."; the rate
+  is now displayed, matching the browser.
+
 ## [0.3.1] - 2026-07-01
 
 A small fix-up release: bookings you make through butler now read back in the
