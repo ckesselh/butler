@@ -125,8 +125,23 @@ pub fn isValidVat(v: []const u8) bool {
 ///   raw key alongside the label so a wrong row can never hide ground truth, keys
 ///   absent here render as unmapped rather than guessed, and the table should be
 ///   extended only against a known-good reference.
+///
+///   TWO NUMBERING SCHEMES — the same tax treatment reads back under different
+///   numeric keys depending on how the posting was CREATED:
+///     - Web UI / DATEV import → single-digit legacy keys (0, 8, 9, 18, 19, …).
+///     - API `/postings/add/*` (i.e. every posting butler writes) → 4xx/7xx
+///       keys (401, 402, 701, 702), plus 94 for §13b which is shared.
+///   The label is identical per treatment; only the number differs by origin.
+///   Both schemes are listed below so butler can decode the very postings it
+///   writes — without the 4xx/7xx rows, every butler-created booking would show
+///   as "?unmapped". The write side is unaffected: butler always sends the
+///   documented symbolic `vat` code; BHB picks the numeric key. The legacy
+///   scheme is NOT selectable over the API — passing a numeric key ("9", "19")
+///   as the `vat` option is rejected ("invalid vat option for given account"),
+///   so an API posting always lands under the 4xx/7xx scheme.
 pub const TaxKey = struct { key: []const u8, symbolic: []const u8, label: []const u8 };
 pub const tax_keys = [_]TaxKey{
+    // Legacy single-digit keys (web UI / DATEV origin).
     .{ .key = "0", .symbolic = "0_none", .label = "keine Ust." },
     .{ .key = "8", .symbolic = "7_pre", .label = "7% Vst." },
     .{ .key = "9", .symbolic = "19_pre", .label = "19% Vst." },
@@ -135,7 +150,16 @@ pub const tax_keys = [_]TaxKey{
     // Lower confidence (sparse evidence). Benign — 0% like key 0 — and the raw
     // key stays visible if it is ever the wrong label.
     .{ .key = "20", .symbolic = "0_none", .label = "keine Ust." },
+    // Shared between both schemes.
     .{ .key = "94", .symbolic = "19_both_1", .label = "§13b 19% USt./VSt." },
+    // API-write keys (every posting butler creates). Same treatment/label as
+    // the legacy keys above, distinct number. 401 and 702 confirmed against the
+    // BHB web UI; 402 and 701 follow from the documented label of the symbolic
+    // code that produces them (7_pre → "7% Vst.", 19_both_2 → i.g.E. 19%).
+    .{ .key = "401", .symbolic = "19_pre", .label = "19% Vst." },
+    .{ .key = "402", .symbolic = "7_pre", .label = "7% Vst." },
+    .{ .key = "701", .symbolic = "19_both_2", .label = "i.g.E. 19% USt./VSt." },
+    .{ .key = "702", .symbolic = "7_both", .label = "i.g.E. 7% USt./VSt." },
 };
 
 /// The documented German label for a numeric `tax_key`, or null when the key is
@@ -436,8 +460,14 @@ const bookings_verbs = [_]Verb{
             .{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" },
         },
         .notes =
-        \\This is the FREE booking class ("Erweitertes Buchen") — not anchored to a
-        \\receipt or transaction; for those see `receipts book` / `transactions book`.
+        \\Most bookings should NOT use this command. An expense or income tied to
+        \\an invoice is booked with `receipts book`, and one tied to a bank payment
+        \\with `transactions book`, so the posting stays ANCHORED to its receipt or
+        \\transaction and is re-booked / settled / decoded through it. Reach for
+        \\`bookings add` ONLY for a free, standalone entry ("Erweitertes Buchen")
+        \\that has neither a receipt nor a payment — e.g. accruals,
+        \\reclassifications, or opening balances. A free booking cannot be deleted
+        \\via the API (web UI only), so do not use it to experiment.
         \\New bookings are created CONFIRMED (visible to the API and the web UI,
         \\still unfixed so they stay editable/deletable in the UI). To stage one
         \\for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
@@ -843,6 +873,12 @@ test "taxKeyLabel decodes known keys and rejects unknown" {
     try std.testing.expectEqualStrings("i.g.E. 7% USt./VSt.", taxKeyLabel("18").?);
     try std.testing.expectEqualStrings("§13b 19% USt./VSt.", taxKeyLabel("94").?);
     try std.testing.expectEqualStrings("keine Ust.", taxKeyLabel("0").?);
+    // API-write keys decode to the same labels as their legacy counterparts, so
+    // butler can read back the postings it writes (401/402/701/702 ↔ 9/8/19/18).
+    try std.testing.expectEqualStrings("19% Vst.", taxKeyLabel("401").?);
+    try std.testing.expectEqualStrings("7% Vst.", taxKeyLabel("402").?);
+    try std.testing.expectEqualStrings("i.g.E. 19% USt./VSt.", taxKeyLabel("701").?);
+    try std.testing.expectEqualStrings("i.g.E. 7% USt./VSt.", taxKeyLabel("702").?);
     // An undocumented key is reported as unknown, never guessed.
     try std.testing.expect(taxKeyLabel("23") == null);
     // Every table entry's symbolic code must be a real documented vat code, so
