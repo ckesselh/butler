@@ -186,6 +186,14 @@ works, download does not. **[confirmed]**
 
 ## Receipts (`/receipts/*`)
 
+- **No update endpoint — receipt metadata is immutable via the API.** The only
+  receipt verbs are `add`/`addBatch`/`upload`, `get`, `delete` and `restore`;
+  there is no `/receipts/update` (the API's only update routes are
+  `/settings/update/{postingaccount,creditor,debtor}` and
+  `/cost-locations/update`). A receipt captured with wrong metadata — e.g. a
+  credit note stored as a regular invoice with a positive amount — cannot be
+  corrected in place: fix it in the web UI, or `delete` and re-upload it
+  (deletes are soft; `/receipts/restore/id_by_customer` exists). **[spec]**
 - **Upload field names:** the file goes in `file` as **base64**, and
   `file_name` is **required** alongside it (because `file` is base64). It is
   *not* `filename`, `file_content`, or `base64`. **[spec]**
