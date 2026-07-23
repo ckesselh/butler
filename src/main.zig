@@ -374,5 +374,6 @@ test {
     std.testing.refAllDecls(@import("util/http.zig"));
     std.testing.refAllDecls(@import("util/json.zig"));
     std.testing.refAllDecls(@import("util/money.zig"));
+    std.testing.refAllDecls(@import("util/tax.zig"));
     std.testing.refAllDecls(@import("util/ui.zig"));
 }

@@ -60,10 +60,16 @@ pub const Flag = struct {
 };
 
 /// A documented positional argument (e.g. <id>, <file>). Presence is still
-/// enforced in the handler; this entry drives help/man rendering only.
+/// enforced in the handler (with a tailored message); `int` is validated in
+/// cli.Flags.validate like the Flag counterpart, so handlers read an
+/// already-validated value via Flags.posInt.
 pub const Positional = struct {
     name: []const u8,
     help: []const u8 = "",
+    /// The value must parse as an integer (ids, account numbers). Validated at
+    /// parse time so `receipts show abc` yields a clean usage error instead of
+    /// a handler-specific one.
+    int: bool = false,
 };
 
 /// A leaf command = one (resource, verb) pair, owning its flags.
@@ -101,98 +107,6 @@ pub const vat_codes = [_][]const u8{
 
 pub fn isValidVat(v: []const u8) bool {
     return inChoices(&vat_codes, v);
-}
-
-/// Documented German label for a posting's numeric `tax_key` (returned by
-/// `/postings/get`).
-///
-/// PROVENANCE — read carefully before trusting or extending this table:
-///   The numeric `tax_key` is UNDOCUMENTED. The BHB OpenAPI spec
-///   (app.buchhaltungsbutler.de/docs/api/v1.de.json) lists `tax_key` only with
-///   the placeholder example value "1" — no enum, no description. The symbolic
-///   WRITE-side codes (`vat_codes` above) ARE documented: the `/postings/add/free`
-///   `vat` parameter description spells out a German label for each, e.g.
-///   `19_both_2 → 'I.g.E. 19% USt./VSt.'`, `19_both_1 → '§13b 19% USt./VSt.'`,
-///   `19_pre → '19% Vst.'`. This table maps each observed numeric READ key to
-///   that symbolic code; each `.label` follows the wording BHB shows in its web
-///   UI (e.g. "i.g.E. 19% USt./VSt."), which matches the documented spec labels
-///   up to minor casing ("I.g.E.", "keine Ust.").
-///
-///   The numeric `tax_key` is a tax-treatment key, independent of the chart of
-///   accounts — it does not change between SKR03, SKR04, etc. (account NUMBERS
-///   do; the tax key does not). The numeric→symbolic mapping is nonetheless a
-///   best-effort decode of an undocumented field: callers MUST keep showing the
-///   raw key alongside the label so a wrong row can never hide ground truth, keys
-///   absent here render as unmapped rather than guessed, and the table should be
-///   extended only against a known-good reference.
-///
-///   TWO NUMBERING SCHEMES — the same tax treatment reads back under different
-///   numeric keys depending on how the posting was CREATED:
-///     - Web UI / DATEV import → single-digit legacy keys (0, 8, 9, 18, 19, …).
-///     - API `/postings/add/*` (i.e. every posting butler writes) → 4xx/7xx
-///       keys (401, 402, 701, 702), plus 94 for §13b which is shared.
-///   The label is identical per treatment; only the number differs by origin.
-///   Both schemes are listed below so butler can decode the very postings it
-///   writes — without the 4xx/7xx rows, every butler-created booking would show
-///   as "?unmapped". The write side is unaffected: butler always sends the
-///   documented symbolic `vat` code; BHB picks the numeric key. The legacy
-///   scheme is NOT selectable over the API — passing a numeric key ("9", "19")
-///   as the `vat` option is rejected ("invalid vat option for given account"),
-///   so an API posting always lands under the 4xx/7xx scheme.
-pub const TaxKey = struct { key: []const u8, symbolic: []const u8, label: []const u8 };
-pub const tax_keys = [_]TaxKey{
-    // Legacy single-digit keys (web UI / DATEV origin).
-    .{ .key = "0", .symbolic = "0_none", .label = "keine Ust." },
-    .{ .key = "8", .symbolic = "7_pre", .label = "7% Vst." },
-    .{ .key = "9", .symbolic = "19_pre", .label = "19% Vst." },
-    .{ .key = "18", .symbolic = "7_both", .label = "i.g.E. 7% USt./VSt." },
-    .{ .key = "19", .symbolic = "19_both_2", .label = "i.g.E. 19% USt./VSt." },
-    // Lower confidence (sparse evidence). Benign — 0% like key 0 — and the raw
-    // key stays visible if it is ever the wrong label.
-    .{ .key = "20", .symbolic = "0_none", .label = "keine Ust." },
-    // Shared between both schemes.
-    .{ .key = "94", .symbolic = "19_both_1", .label = "§13b 19% USt./VSt." },
-    // API-write keys (every posting butler creates). Same treatment/label as
-    // the legacy keys above, distinct number. 401 and 702 confirmed against the
-    // BHB web UI; 402 and 701 follow from the documented label of the symbolic
-    // code that produces them (7_pre → "7% Vst.", 19_both_2 → i.g.E. 19%).
-    .{ .key = "401", .symbolic = "19_pre", .label = "19% Vst." },
-    .{ .key = "402", .symbolic = "7_pre", .label = "7% Vst." },
-    .{ .key = "701", .symbolic = "19_both_2", .label = "i.g.E. 19% USt./VSt." },
-    .{ .key = "702", .symbolic = "7_both", .label = "i.g.E. 7% USt./VSt." },
-};
-
-/// The documented German label for a numeric `tax_key`, or null when the key is
-/// not in our empirically-derived table (see `tax_keys` provenance). Null means
-/// "unknown" — never a fabricated label; the caller shows the raw key instead.
-pub fn taxKeyLabel(key: []const u8) ?[]const u8 {
-    for (&tax_keys) |t| if (std.mem.eql(u8, t.key, key)) return t.label;
-    return null;
-}
-
-/// The label the table uses for a VAT-free posting. Kept as a named constant so
-/// the account-driven-VAT check below compares against exactly one string.
-pub const no_vat_label = "keine Ust.";
-
-/// The integer part of a non-zero VAT rate string, or null when the rate is
-/// missing or zero. "19.00" → "19", "7.00" → "7", "0.00"/"" → null.
-///
-/// Some VAT is ACCOUNT-DRIVEN, not keyed: a few accounts (e.g. "Verrechnete
-/// sonstige Sachbezüge 19/16% USt", used for the geldwerter Vorteil of a company
-/// car or a benefit) carry the rate on the account itself, so BHB returns the
-/// posting with `tax_key` 0 (which decodes to "keine Ust.") yet a non-zero `vat`,
-/// and shows e.g. "19% USt." in its own UI. Callers use this to surface that rate
-/// instead of the misleading "no VAT" label; the raw key still stays visible.
-pub fn vatRatePrefix(vat: ?[]const u8) ?[]const u8 {
-    const v = vat orelse return null;
-    var nonzero = false;
-    for (v) |c| if (c >= '1' and c <= '9') {
-        nonzero = true;
-        break;
-    };
-    if (!nonzero) return null;
-    const dot = std.mem.indexOfScalar(u8, v, '.') orelse v.len;
-    return v[0..dot];
 }
 
 /// Global flags accepted by every command, merged into each verb's set at
@@ -253,14 +167,14 @@ const transactions_verbs = [_]Verb{
         .name = "show",
         .summary = "a single transaction",
         .usage = "butler transactions show <id>",
-        .positionals = &.{.{ .name = "id", .help = "transaction id_by_customer" }},
+        .positionals = &.{.{ .name = "id", .help = "transaction id_by_customer", .int = true }},
         .notes = "Show a single transaction by its id_by_customer.",
     },
     .{
         .name = "book",
         .summary = "book a payment directly onto account(s), no receipt",
         .usage = "butler transactions book <tx> (--account A --amount N --vat V --text T | --from-json <file>)",
-        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer" }},
+        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
         .flags = &.{
             .{ .name = "from-json", .arg = "file", .help = "JSON array of {account, postingtext, vat, amount} split lines" },
             .{ .name = "account", .arg = "acct", .help = "single line: posting account (e.g. 3841)" },
@@ -283,7 +197,7 @@ const transactions_verbs = [_]Verb{
         .name = "settle",
         .summary = "settle booked receipt(s) against a payment",
         .usage = "butler transactions settle <tx> --receipts <id,id,...> [--dry-run]",
-        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer" }},
+        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
         .flags = &.{
             .{ .name = "receipts", .required = true, .arg = "csv", .help = "receipt id_by_customer(s), comma-separated" },
             .{ .name = "dry-run", .kind = .boolean, .help = "print the derived payload, send nothing" },
@@ -300,21 +214,21 @@ const transactions_verbs = [_]Verb{
         .name = "link",
         .summary = "link a receipt to a transaction (no booking)",
         .usage = "butler transactions link <tx> <receipt>",
-        .positionals = &.{ .{ .name = "tx", .help = "transaction id_by_customer" }, .{ .name = "receipt", .help = "receipt id_by_customer" } },
+        .positionals = &.{ .{ .name = "tx", .help = "transaction id_by_customer", .int = true }, .{ .name = "receipt", .help = "receipt id_by_customer", .int = true } },
         .notes = "A soft pointer (/transactions/assign/receipt): it sets the payment date but\ndoes NOT settle — no posting, the receipt stays unpaid. To actually settle, use\n`transactions settle` / `receipts pay`.",
     },
     .{
         .name = "unlink",
         .summary = "remove a receipt link from a transaction",
         .usage = "butler transactions unlink <tx> <receipt>",
-        .positionals = &.{ .{ .name = "tx", .help = "transaction id_by_customer" }, .{ .name = "receipt", .help = "receipt id_by_customer" } },
+        .positionals = &.{ .{ .name = "tx", .help = "transaction id_by_customer", .int = true }, .{ .name = "receipt", .help = "receipt id_by_customer", .int = true } },
         .notes = "Inverse of `link`. The API rejects it (error 10) once a confirmed posting\nexists on the link.",
     },
     .{
         .name = "receipts",
         .summary = "list receipts assigned to a transaction",
         .usage = "butler transactions receipts <tx> [--confirmed-only]",
-        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer" }},
+        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
         .flags = &.{
             .{ .name = "confirmed-only", .kind = .boolean, .help = "only confirmed assignments" },
             filter_flag,
@@ -358,7 +272,7 @@ const receipts_verbs = [_]Verb{
         .name = "show",
         .summary = "a single receipt",
         .usage = "butler receipts show <id>",
-        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
         .notes =
         \\Show a single receipt by its id_by_customer, fetched directly.
         \\Deleted receipts are shown too (deleted: 1).
@@ -368,7 +282,7 @@ const receipts_verbs = [_]Verb{
         .name = "download",
         .summary = "save a receipt's stored file",
         .usage = "butler receipts download <id> [--file <path>]",
-        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
         .flags = &.{
             .{ .name = "file", .arg = "path", .help = "destination path (default: the receipt's filename in BHB)" },
         },
@@ -399,14 +313,14 @@ const receipts_verbs = [_]Verb{
         .name = "delete",
         .summary = "delete a receipt",
         .usage = "butler receipts delete <id>",
-        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
         .notes = "Delete a receipt by its id_by_customer.",
     },
     .{
         .name = "book",
         .summary = "book a receipt onto account(s)",
         .usage = "butler receipts book <id> (--account A --amount N --vat V --text T | --from-json <file>) [--creditor C | --debtor D]",
-        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
         .flags = &.{
             .{ .name = "from-json", .arg = "file", .help = "JSON array of {account, postingtext, vat, amount} split lines" },
             .{ .name = "account", .arg = "acct", .help = "single line: posting account (e.g. 6815)" },
@@ -429,9 +343,9 @@ const receipts_verbs = [_]Verb{
         .name = "pay",
         .summary = "settle a booked receipt against a bank payment",
         .usage = "butler receipts pay <id> --with <tx> [flags]",
-        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
         .flags = &.{
-            .{ .name = "with", .required = true, .arg = "tx", .help = "the bank transaction id_by_customer that pays it" },
+            .{ .name = "with", .required = true, .arg = "tx", .help = "the bank transaction id_by_customer that pays it", .int = true },
             .{ .name = "amount", .arg = "n", .help = "part-payment amount (default: the receipt's open amount)" },
             .{ .name = "account", .arg = "acct", .help = "override the creditor account (default: from the receipt's booking)" },
             .{ .name = "text", .arg = "s", .help = "posting text (default: counterparty + invoice number)" },
@@ -515,14 +429,14 @@ const bookings_verbs = [_]Verb{
         .name = "unconfirm",
         .summary = "set a free booking back to unconfirmed",
         .usage = "butler bookings unconfirm <id>",
-        .positionals = &.{.{ .name = "id", .help = "posting id" }},
+        .positionals = &.{.{ .name = "id", .help = "posting id", .int = true }},
         .notes = "Set a free booking back to unconfirmed by its posting id.",
     },
     .{
         .name = "assign",
         .summary = "link a receipt to a free booking",
         .usage = "butler bookings assign <receipt-id> <posting-id>",
-        .positionals = &.{ .{ .name = "receipt-id", .help = "receipt id_by_customer" }, .{ .name = "posting-id", .help = "posting id_by_customer" } },
+        .positionals = &.{ .{ .name = "receipt-id", .help = "receipt id_by_customer", .int = true }, .{ .name = "posting-id", .help = "posting id_by_customer", .int = true } },
         .notes = "Assign a receipt to an existing free booking\n(/postings/assign/receipt-to-free-posting) — e.g. a booking made before its\nreceipt arrived.",
     },
     .{
@@ -567,7 +481,7 @@ const accounts_verbs = [_]Verb{
         .name = "show",
         .summary = "a single account by its number",
         .usage = "butler accounts show <account>",
-        .positionals = &.{.{ .name = "account", .help = "postingaccount_number" }},
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number", .int = true }},
         .notes =
         \\Look up one account by its number in the chart of accounts
         \\(/settings/get/postingaccounts) — ANY kind: a Sachkonto, a base cash/bank
@@ -581,7 +495,7 @@ const accounts_verbs = [_]Verb{
         .name = "add",
         .summary = "create a postingaccount (Sachkonto)",
         .usage = "butler accounts add <account> --name <s> --parent <n> [--dry-run]",
-        .positionals = &.{.{ .name = "account", .help = "postingaccount_number to create" }},
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number to create", .int = true }},
         .flags = &.{
             .{ .name = "name", .required = true, .arg = "s", .help = "account name" },
             .{ .name = "parent", .required = true, .arg = "n", .int = true, .min = 0, .help = "parent postingaccount_number (the chart node it nests under)" },
@@ -597,7 +511,7 @@ const accounts_verbs = [_]Verb{
         .name = "update",
         .summary = "rename a postingaccount by its number",
         .usage = "butler accounts update <account> --name <s> [--dry-run]",
-        .positionals = &.{.{ .name = "account", .help = "postingaccount_number" }},
+        .positionals = &.{.{ .name = "account", .help = "postingaccount_number", .int = true }},
         .flags = &.{
             .{ .name = "name", .required = true, .arg = "s", .help = "new account name" },
             .{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" },
@@ -692,7 +606,7 @@ const creditors_verbs = [_]Verb{
         .name = "show",
         .summary = "a single creditor by its account number",
         .usage = "butler creditors show <account>",
-        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number" }},
+        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number", .int = true }},
         .notes = "Look up one creditor by its account number (postingaccount_number);\nthe lookup pages the list endpoint, which has no get-by-id route.",
     },
     .{
@@ -706,7 +620,7 @@ const creditors_verbs = [_]Verb{
         .name = "update",
         .summary = "update a creditor by its account number",
         .usage = "butler creditors update <account> [field flags] [--dry-run]",
-        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number" }},
+        .positionals = &.{.{ .name = "account", .help = "creditor postingaccount_number", .int = true }},
         .flags = &creditor_update_flags,
         .notes = "Update a creditor via /settings/update/creditor. " ++ subledger_update_note,
     },
@@ -729,7 +643,7 @@ const debtors_verbs = [_]Verb{
         .name = "show",
         .summary = "a single debtor by its account number",
         .usage = "butler debtors show <account>",
-        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number" }},
+        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number", .int = true }},
         .notes = "Look up one debtor by its account number (postingaccount_number);\nthe lookup pages the list endpoint, which has no get-by-id route.",
     },
     .{
@@ -743,7 +657,7 @@ const debtors_verbs = [_]Verb{
         .name = "update",
         .summary = "update a debtor by its account number",
         .usage = "butler debtors update <account> [field flags] [--dry-run]",
-        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number" }},
+        .positionals = &.{.{ .name = "account", .help = "debtor postingaccount_number", .int = true }},
         .flags = &debtor_update_flags,
         .notes = "Update a debtor via /settings/update/debtor. " ++ subledger_update_note,
     },
@@ -899,35 +813,9 @@ test "tree lookups" {
     try std.testing.expect(!isValidVat("99_made_up"));
 }
 
-test "taxKeyLabel decodes known keys and rejects unknown" {
-    // The distinction that matters: 9 is domestic input VAT, 19 is an
-    // intra-community acquisition, 94 is a §13b reverse charge — all at 19%.
-    try std.testing.expectEqualStrings("19% Vst.", taxKeyLabel("9").?);
-    try std.testing.expectEqualStrings("i.g.E. 19% USt./VSt.", taxKeyLabel("19").?);
-    try std.testing.expectEqualStrings("i.g.E. 7% USt./VSt.", taxKeyLabel("18").?);
-    try std.testing.expectEqualStrings("§13b 19% USt./VSt.", taxKeyLabel("94").?);
-    try std.testing.expectEqualStrings("keine Ust.", taxKeyLabel("0").?);
-    // API-write keys decode to the same labels as their legacy counterparts, so
-    // butler can read back the postings it writes (401/402/701/702 ↔ 9/8/19/18).
-    try std.testing.expectEqualStrings("19% Vst.", taxKeyLabel("401").?);
-    try std.testing.expectEqualStrings("7% Vst.", taxKeyLabel("402").?);
-    try std.testing.expectEqualStrings("i.g.E. 19% USt./VSt.", taxKeyLabel("701").?);
-    try std.testing.expectEqualStrings("i.g.E. 7% USt./VSt.", taxKeyLabel("702").?);
-    // An undocumented key is reported as unknown, never guessed.
-    try std.testing.expect(taxKeyLabel("23") == null);
-    // Every table entry's symbolic code must be a real documented vat code, so
-    // the label can always be traced back to the spec's vat parameter list.
-    for (&tax_keys) |t| try std.testing.expect(isValidVat(t.symbolic));
-}
-
-test "vatRatePrefix surfaces account-driven VAT that tax_key 0 hides" {
-    // Non-zero rates yield their integer part; used when tax_key decodes to
-    // "keine Ust." but the posting carries a rate (Sachbezug accounts).
-    try std.testing.expectEqualStrings("19", vatRatePrefix("19.00").?);
-    try std.testing.expectEqualStrings("7", vatRatePrefix("7.00").?);
-    try std.testing.expectEqualStrings("16", vatRatePrefix("16.00").?);
-    // A truly VAT-free posting (rate 0 / missing) keeps the "keine Ust." label.
-    try std.testing.expect(vatRatePrefix("0.00") == null);
-    try std.testing.expect(vatRatePrefix("") == null);
-    try std.testing.expect(vatRatePrefix(null) == null);
+// The tax-key decode table lives in util/tax.zig; this cross-check stays here
+// because it ties that table to THIS file's documented vat codes.
+test "tax table symbolic codes are documented vat codes" {
+    const tax = @import("util/tax.zig");
+    for (&tax.tax_keys) |t| try std.testing.expect(isValidVat(t.symbolic));
 }

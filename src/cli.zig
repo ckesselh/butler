@@ -158,6 +158,18 @@ pub const Flags = struct {
                 return;
             }
         }
+
+        // Integer positionals must parse (argv[0]/argv[1] are resource/verb,
+        // so the verb's positionals start at index 2). Presence stays a
+        // handler concern — its "missing <x>" messages are tailored.
+        for (verb.positionals, 2..) |p, idx| {
+            if (!p.int) continue;
+            const v = self.pos(idx) orelse continue;
+            _ = std.fmt.parseInt(i64, v, 10) catch {
+                try self.fail("<{s}> must be an integer (got '{s}')", .{ p.name, v });
+                return;
+            };
+        }
     }
 
     pub fn opt(self: *const Flags, name: []const u8) ?[]const u8 {
@@ -171,6 +183,21 @@ pub const Flags = struct {
     pub fn pos(self: *const Flags, idx: usize) ?[]const u8 {
         if (idx < self.positionals.items.len) return self.positionals.items[idx];
         return null;
+    }
+
+    /// Positional `idx` as an i64, null when absent. The spec marks these
+    /// positionals `.int = true`, so validate() has already rejected a
+    /// non-integer — the parse here cannot fail on a validated command line.
+    pub fn posInt(self: *const Flags, idx: usize) ?i64 {
+        const s = self.pos(idx) orelse return null;
+        return std.fmt.parseInt(i64, s, 10) catch null;
+    }
+
+    /// Flag `name` as an i64, null when absent. Same contract as posInt: the
+    /// spec marks the flag `.int = true`, so validate() already checked it.
+    pub fn optInt(self: *const Flags, name: []const u8) ?i64 {
+        const s = self.opt(name) orelse return null;
+        return std.fmt.parseInt(i64, std.mem.trim(u8, s, " \t"), 10) catch null;
     }
 };
 
@@ -249,6 +276,27 @@ test "validate: false boolean still rejected on the wrong verb" {
     const cmd = spec.resolveCommand("accounts").?;
     try f.validate(spec.resolveVerb(cmd, "list").?);
     try std.testing.expect(f.parse_error != null);
+}
+
+test "validate: int positional rejected, posInt reads a valid one" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const gpa = arena.allocator();
+    const cmd = spec.resolveCommand("receipts").?;
+    {
+        // receipts show <id> marks its positional .int; a non-integer is a usage error.
+        var f = try Flags.parse(gpa, &.{ "receipts", "show", "abc" });
+        try f.validate(spec.resolveVerb(cmd, "show").?);
+        try std.testing.expect(f.parse_error != null);
+    }
+    {
+        var f = try Flags.parse(gpa, &.{ "receipts", "show", "0289" });
+        try f.validate(spec.resolveVerb(cmd, "show").?);
+        try std.testing.expect(f.parse_error == null);
+        // posInt canonicalizes: "0289" reads as 289.
+        try std.testing.expectEqual(@as(?i64, 289), f.posInt(2));
+        try std.testing.expectEqual(@as(?i64, null), f.posInt(3));
+    }
 }
 
 test "validate: missing required and bad choice" {

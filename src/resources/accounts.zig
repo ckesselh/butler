@@ -91,8 +91,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             // `debtors show`. The endpoint has no by-number filter and no
             // get-by-id route, so page the whole chart and match the canonical
             // number client-side (so "0540" finds account 540).
-            const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
-            const acctn = std.fmt.parseInt(i64, acct, 10) catch return cli.missing(stderr, "<account> to be an integer");
+            const acctn = f.posInt(2) orelse return cli.missing(stderr, "<account>");
             const canon = try std.fmt.allocPrint(c.gpa, "{d}", .{acctn});
             switch (try paged.fetchAll(c, get_path, 0, &.{})) {
                 .failed => |resp| {
@@ -116,8 +115,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
 /// honour --dry-run (redacted echo), POST, then output.reportWrite.
 fn write(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, is_update: bool) !u8 {
     const gpa = c.gpa;
-    const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
-    const acctn = std.fmt.parseInt(i64, acct, 10) catch return cli.missing(stderr, "<account> to be an integer");
+    const acctn = f.posInt(2) orelse return cli.missing(stderr, "<account>");
     const name = f.opt("name") orelse return cli.missing(stderr, "--name");
 
     var o = try json.ObjBuilder.init(gpa);
@@ -127,8 +125,7 @@ fn write(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io
     if (!is_update) {
         // The API requires a parent account on create (the chart node it nests
         // under); update keeps the existing parent.
-        const parent = f.opt("parent") orelse return cli.missing(stderr, "--parent");
-        const parentn = std.fmt.parseInt(i64, parent, 10) catch return cli.missing(stderr, "--parent to be an integer");
+        const parentn = f.optInt("parent") orelse return cli.missing(stderr, "--parent");
         try o.int("parent_postingaccount_number", parentn);
     }
     try o.end();

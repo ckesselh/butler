@@ -70,8 +70,7 @@ pub fn run(c: Client, ep: Endpoints, verb: []const u8, f: *const cli.Flags, stdo
             // Match on the canonical account number: parse to int (reject a
             // non-numeric arg as a usage error) and compare its decimal form, so
             // "0540" finds account 540 — like transactions show.
-            const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
-            const acctn = std.fmt.parseInt(i64, acct, 10) catch return cli.missing(stderr, "<account> to be an integer");
+            const acctn = f.posInt(2) orelse return cli.missing(stderr, "<account>");
             const canon = try std.fmt.allocPrint(c.gpa, "{d}", .{acctn});
             switch (try paged.fetchAll(c, ep.get, 0, &.{})) {
                 .failed => |resp| {
@@ -101,8 +100,7 @@ fn write(c: Client, ep: Endpoints, f: *const cli.Flags, stdout: *std.Io.Writer, 
     var o = try json.ObjBuilder.init(gpa);
     try o.str("api_key", c.api_key);
     if (is_update) {
-        const acct = f.pos(2) orelse return cli.missing(stderr, "<account>");
-        const acctn = std.fmt.parseInt(i64, acct, 10) catch return cli.missing(stderr, "<account> to be an integer");
+        const acctn = f.posInt(2) orelse return cli.missing(stderr, "<account>");
         // Reject an empty update locally rather than sending a no-op.
         var any = false;
         for (update_fields) |name| if (f.opt(name) != null) {

@@ -98,39 +98,22 @@ fn upload(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.I
 /// `e_invoice_type` 2 (xRechnung) is XML, everything else PDF.
 fn download(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !u8 {
     const gpa = c.gpa;
-    const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
-    const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
+    const idn = f.posInt(2) orelse return cli.missing(stderr, "<id>");
 
-    const path = try std.fmt.allocPrint(gpa, "/receipts/get/{d}", .{idn});
-    var o = try json.ObjBuilder.init(gpa);
-    try o.str("api_key", c.api_key);
-    try o.boolean("get_file", true);
-    try o.end();
-    var r = try c.post(path, o.items());
+    var r = try c.postById("/receipts/get", idn, true);
     defer r.deinit(gpa);
 
     if (r.status != 200 or !json.bodySuccess(gpa, r.body)) {
-        const shown = try json.redactAlloc(gpa, r.body, c.api_key);
-        try stderr.print("download: HTTP {d} {s}\n", .{ r.status, shown });
-        return 1;
+        return output.reportFail(gpa, stderr, r, "download", c.api_key);
     }
     const parsed = std.json.parseFromSlice(std.json.Value, gpa, r.body, .{}) catch {
         try stderr.writeAll("download: unparseable response body\n");
         return 1;
     };
     // A miss answers 200 with an empty `data` ARRAY instead of an object.
-    const data: std.json.ObjectMap = switch (parsed.value) {
-        .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
-            .object => |d| d,
-            else => {
-                try stderr.writeAll("not found.\n");
-                return 1;
-            },
-        },
-        else => {
-            try stderr.writeAll("not found.\n");
-            return 1;
-        },
+    const data = output.dataObject(parsed.value) orelse {
+        try stderr.writeAll("not found.\n");
+        return 1;
     };
     const b64 = json.getStr(data, "file_content") orelse {
         try stderr.writeAll("download: response carries no file_content\n");
@@ -151,11 +134,12 @@ fn download(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !u8 {
     // Destination: --file wins; else the receipt's BHB filename (basename
     // only, it is server-provided) plus the extension e_invoice_type implies.
     const out_path = f.opt("file") orelse blk: {
-        const raw_name = json.getStr(data, "filename") orelse id;
-        const name = std.fs.path.basename(raw_name);
-        const et = if (data.get("e_invoice_type")) |v| try json.valueToAlloc(gpa, v) else "";
-        const ext = if (std.mem.eql(u8, et, "2")) "xml" else "pdf";
-        break :blk try std.fmt.allocPrint(gpa, "{s}.{s}", .{ if (name.len > 0) name else id, ext });
+        const fallback = try std.fmt.allocPrint(gpa, "{d}", .{idn});
+        const name = std.fs.path.basename(json.getStr(data, "filename") orelse fallback);
+        // getInt covers the string-or-number form BHB fields arrive in.
+        const xrechnung = (json.getInt(data, "e_invoice_type") orelse 0) == 2;
+        const ext = if (xrechnung) "xml" else "pdf";
+        break :blk try std.fmt.allocPrint(gpa, "{s}.{s}", .{ if (name.len > 0) name else fallback, ext });
     };
 
     var file = std.Io.Dir.cwd().createFile(c.io, out_path, .{}) catch |e| {
@@ -179,8 +163,7 @@ fn download(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !u8 {
 /// --from-json.
 fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !u8 {
     const gpa = c.gpa;
-    const rid = f.pos(2) orelse return cli.missing(stderr, "<receipt-id>");
-    const ridn = std.fmt.parseInt(i64, rid, 10) catch return cli.missing(stderr, "<receipt-id> to be an integer");
+    const ridn = f.posInt(2) orelse return cli.missing(stderr, "<receipt-id>");
 
     // Default to the Kreditoren-Sammelkonto (an Eingangsrechnung) when neither
     // side is given; --creditor names a dedicated creditor, --debtor switches to
@@ -222,8 +205,7 @@ fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.
 /// the receipt's open amount must equal the transaction amount.
 fn pay(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !u8 {
     const rid = f.pos(2) orelse return cli.missing(stderr, "<receipt-id>");
-    const txs = f.opt("with") orelse return cli.missing(stderr, "--with <transaction-id>");
-    const txn = std.fmt.parseInt(i64, txs, 10) catch return cli.missing(stderr, "--with to be an integer");
+    const txn = f.optInt("with") orelse return cli.missing(stderr, "--with <transaction-id>");
     return settle(c, f, stdout, stderr, txn, &.{rid});
 }
 
@@ -245,8 +227,8 @@ pub fn settle(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *s
     var vats: std.ArrayList([]const u8) = .empty;
     var amounts: std.ArrayList([]const u8) = .empty;
     for (rids) |rid| {
-        _ = std.fmt.parseInt(i64, rid, 10) catch return cli.missing(stderr, "receipt id to be an integer");
-        const receipt = (try findReceipt(c, rid, stderr)) orelse return 1;
+        const ridn = std.fmt.parseInt(i64, rid, 10) catch return cli.missing(stderr, "receipt id to be an integer");
+        const receipt = (try findReceipt(c, ridn, stderr)) orelse return 1;
         const counterparty = json.getStr(receipt, "counterparty") orelse "";
         const invnum = json.getStr(receipt, "invoicenumber") orelse "";
         const rdate = json.getStr(receipt, "date") orelse "";
@@ -328,42 +310,25 @@ fn absCents(s: ?[]const u8) i64 {
 /// returns soft-deleted receipts, so those are rejected here — settling a
 /// deleted receipt must not be possible. Returns its object, aliasing an
 /// arena kept alive for the rest of the run.
-fn findReceipt(c: Client, rid: []const u8, stderr: *std.Io.Writer) !?std.json.ObjectMap {
-    const ridn = std.fmt.parseInt(i64, rid, 10) catch {
-        try stderr.print("error: receipt id '{s}' is not an integer\n", .{rid});
-        return null;
-    };
-    const path = try std.fmt.allocPrint(c.gpa, "/receipts/get/{d}", .{ridn});
-    var o = try json.ObjBuilder.init(c.gpa);
-    try o.str("api_key", c.api_key);
-    try o.end();
-    var r = try c.post(path, o.items());
+fn findReceipt(c: Client, ridn: i64, stderr: *std.Io.Writer) !?std.json.ObjectMap {
+    var r = try c.postById("/receipts/get", ridn, false);
     defer r.deinit(c.gpa);
 
-    const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch {
-        try stderr.print("error: receipt {s}: unparseable response\n", .{rid});
+    const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch null;
+    if (r.status != 200 or parsed == null or !json.envelopeSuccess(parsed.?.value)) {
+        try stderr.print("error: receipt {d} not found\n", .{ridn});
+        return null;
+    }
+    const obj = output.dataObject(parsed.?.value) orelse {
+        try stderr.print("error: receipt {d} not found\n", .{ridn});
         return null;
     };
-    if (r.status == 200 and json.envelopeSuccess(parsed.value)) {
-        switch (parsed.value) {
-            .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
-                .object => |obj| {
-                    // `deleted` is "0"/"1" (string or number depending on the
-                    // route); compare the rendered form.
-                    const deleted = if (obj.get("deleted")) |v| try json.valueToAlloc(c.gpa, v) else "";
-                    if (std.mem.eql(u8, deleted, "1")) {
-                        try stderr.print("error: receipt {s} is deleted\n", .{rid});
-                        return null;
-                    }
-                    return obj;
-                },
-                else => {},
-            },
-            else => {},
-        }
+    // getInt covers the string-or-number form BHB fields arrive in.
+    if ((json.getInt(obj, "deleted") orelse 0) == 1) {
+        try stderr.print("error: receipt {d} is deleted\n", .{ridn});
+        return null;
     }
-    try stderr.print("error: receipt {s} not found\n", .{rid});
-    return null;
+    return obj;
 }
 
 /// The creditor account a receipt was booked against — the credit side of the
@@ -428,17 +393,10 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
         },
         .show => {
-            // Direct read: POST /receipts/get/<id> (path-segment id), with an
-            // object-shaped `data` on a hit and 200 + empty ARRAY on a miss
-            // (docs/bhb-api-quirks.md). Soft-deleted receipts are returned too
-            // (`deleted: "1"`), so a show can inspect them.
-            const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
-            const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
-            const path = try std.fmt.allocPrint(c.gpa, "/receipts/get/{d}", .{idn});
-            var o = try json.ObjBuilder.init(c.gpa);
-            try o.str("api_key", c.api_key);
-            try o.end();
-            var r = try c.post(path, o.items());
+            // Direct read via /receipts/get/<id>. Soft-deleted receipts are
+            // returned too (`deleted: "1"`), so a show can inspect them.
+            const idn = f.posInt(2) orelse return cli.missing(stderr, "<id>");
+            var r = try c.postById("/receipts/get", idn, false);
             defer r.deinit(c.gpa);
             return (try output.emitShowObject(c.gpa, stdout, stderr, r, out_mode, c.api_key)) orelse {
                 try stderr.writeAll("not found.\n");
@@ -453,8 +411,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             // posting to that literal path makes the server parse the segment
             // "id_by_customer" as the id and reject it with error_code 5
             // (docs/bhb-api-quirks.md).
-            const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
-            const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
+            const idn = f.posInt(2) orelse return cli.missing(stderr, "<id>");
             const path = try std.fmt.allocPrint(c.gpa, "/receipts/delete/{d}", .{idn});
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);

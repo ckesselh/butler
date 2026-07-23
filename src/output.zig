@@ -116,6 +116,19 @@ pub fn dataArray(v: std.json.Value) ?[]std.json.Value {
     };
 }
 
+/// The `data` OBJECT of a parsed BHB envelope, or null when absent or not an
+/// object. The direct `*/get/<id>` routes answer a hit with an object here —
+/// and a receipts miss with an empty ARRAY, which correctly reads as null.
+pub fn dataObject(v: std.json.Value) ?std.json.ObjectMap {
+    return switch (v) {
+        .object => |o| switch (o.get("data") orelse std.json.Value{ .null = {} }) {
+            .object => |d| d,
+            else => null,
+        },
+        else => null,
+    };
+}
+
 /// A per-row hook that augments each parsed record with computed fields the API
 /// does not return directly (decoded labels, resolved names). It mutates the
 /// row's object in place; `mode` lets it shape the result per output: in `.table`
@@ -346,17 +359,12 @@ pub fn emitShowObject(
     const parsed: ?std.json.Parsed(std.json.Value) =
         std.json.parseFromSlice(std.json.Value, gpa, resp.body, .{}) catch null;
     if (resp.status != 200 or parsed == null or !json.envelopeSuccess(parsed.?.value)) {
-        if (std.mem.indexOf(u8, resp.body, "not found") != null) return null;
+        if (parsed != null and isNotFound(parsed.?.value)) return null;
         return try fail(gpa, stderr, resp, secret);
     }
 
-    const o: std.json.ObjectMap = switch (parsed.?.value) {
-        .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
-            .object => |d| d,
-            else => return null,
-        },
-        else => return null,
-    };
+    // A hit is an object; a receipts miss is 200 + an empty ARRAY → null.
+    const o = dataObject(parsed.?.value) orelse return null;
 
     // JSON mode emits just the record, matching the list-based show verbs.
     if (out_mode == .json) {
@@ -374,6 +382,16 @@ pub fn emitShowObject(
     return 0;
 }
 
+/// True for the error envelope a by-id miss produces (transactions answer
+/// HTTP 400 error_code 6 "transaction not found"; receipts signal a miss via
+/// an empty data array instead and never reach this).
+fn isNotFound(v: std.json.Value) bool {
+    return switch (v) {
+        .object => |o| (json.getInt(o, "error_code") orelse 0) == 6,
+        else => false,
+    };
+}
+
 /// Report a write-verb outcome (`<what>: ok` / redacted error) to stderr and
 /// return the process exit code.
 pub fn reportWrite(gpa: std.mem.Allocator, stderr: *std.Io.Writer, resp: http.Response, what: []const u8, secret: []const u8) !u8 {
@@ -381,6 +399,13 @@ pub fn reportWrite(gpa: std.mem.Allocator, stderr: *std.Io.Writer, resp: http.Re
         try stderr.print("{s}: ok\n", .{what});
         return 0;
     }
+    return reportFail(gpa, stderr, resp, what, secret);
+}
+
+/// Report a labelled API failure (`<what>: HTTP <status> <redacted body>`) to
+/// stderr and return exit code 1. The failure half of reportWrite, shared with
+/// verbs that render success themselves (e.g. receipts download, status).
+pub fn reportFail(gpa: std.mem.Allocator, stderr: *std.Io.Writer, resp: http.Response, what: []const u8, secret: []const u8) !u8 {
     const shown = try json.redactAlloc(gpa, resp.body, secret);
     try stderr.print("{s}: HTTP {d} {s}\n", .{ what, resp.status, shown });
     return 1;
