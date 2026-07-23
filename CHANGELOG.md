@@ -4,7 +4,11 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-23
+
+This release fixes receipt deletion, adds downloading a receipt's stored
+document, and makes lookups by id reliable: show and settle now find every
+receipt instead of only recent ones.
 
 ### Added
 
