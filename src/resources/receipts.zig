@@ -323,30 +323,46 @@ fn absCents(s: ?[]const u8) i64 {
     return if (v < 0) -v else v;
 }
 
-/// Find a receipt by id_by_customer, trying inbound then outbound via the
-/// list endpoint. (Deliberately not the direct by-id route: the settle path
-/// keeps reading the exercised list shape.) Returns its object, aliasing an
+/// Find a receipt by id_by_customer via the direct `/receipts/get/<id>`
+/// route (a miss answers 200 with an empty `data` ARRAY). The route also
+/// returns soft-deleted receipts, so those are rejected here — settling a
+/// deleted receipt must not be possible. Returns its object, aliasing an
 /// arena kept alive for the rest of the run.
 fn findReceipt(c: Client, rid: []const u8, stderr: *std.Io.Writer) !?std.json.ObjectMap {
-    for ([_][]const u8{ "inbound", "outbound" }) |dir| {
-        var o = try json.ObjBuilder.init(c.gpa);
-        try o.str("api_key", c.api_key);
-        try o.str("list_direction", dir);
-        try o.int("limit", 500);
-        try o.end();
-        var r = try c.post("/receipts/get", o.items());
-        defer r.deinit(c.gpa);
-        const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch continue;
-        const rows = output.dataArray(parsed.value) orelse continue;
-        for (rows) |row| switch (row) {
-            .object => |obj| {
-                const id = json.getStr(obj, "id_by_customer") orelse continue;
-                if (std.mem.eql(u8, id, rid)) return obj;
+    const ridn = std.fmt.parseInt(i64, rid, 10) catch {
+        try stderr.print("error: receipt id '{s}' is not an integer\n", .{rid});
+        return null;
+    };
+    const path = try std.fmt.allocPrint(c.gpa, "/receipts/get/{d}", .{ridn});
+    var o = try json.ObjBuilder.init(c.gpa);
+    try o.str("api_key", c.api_key);
+    try o.end();
+    var r = try c.post(path, o.items());
+    defer r.deinit(c.gpa);
+
+    const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch {
+        try stderr.print("error: receipt {s}: unparseable response\n", .{rid});
+        return null;
+    };
+    if (r.status == 200 and json.envelopeSuccess(parsed.value)) {
+        switch (parsed.value) {
+            .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
+                .object => |obj| {
+                    // `deleted` is "0"/"1" (string or number depending on the
+                    // route); compare the rendered form.
+                    const deleted = if (obj.get("deleted")) |v| try json.valueToAlloc(c.gpa, v) else "";
+                    if (std.mem.eql(u8, deleted, "1")) {
+                        try stderr.print("error: receipt {s} is deleted\n", .{rid});
+                        return null;
+                    }
+                    return obj;
+                },
+                else => {},
             },
             else => {},
-        };
+        }
     }
-    try stderr.print("error: receipt {s} not found (the lookup scans the 500 most recent per direction)\n", .{rid});
+    try stderr.print("error: receipt {s} not found\n", .{rid});
     return null;
 }
 

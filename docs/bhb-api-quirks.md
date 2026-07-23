@@ -116,9 +116,9 @@ sections.
   **[verified 2026-07-23]**
 - `[spec, untested]` `*/restore/id_by_customer` presumably follows the same
   path-segment pattern (`POST /receipts/restore/<id>`).
-- *butler: `receipts show`, `receipts download` and `transactions show` use
-  the direct routes; `receipts pay`/`transactions settle` deliberately keep
-  reading via the list endpoint.*
+- *butler: `receipts show`, `receipts download`, `transactions show` and the
+  receipt lookup behind `receipts pay`/`transactions settle` use the direct
+  routes; the settle lookup rejects a soft-deleted receipt explicitly.*
 
 ## Postings (`/postings/*`)
 
