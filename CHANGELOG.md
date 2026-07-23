@@ -14,11 +14,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- `receipts show` and `transactions show` fetch the record directly by id.
-  Receipt lookups no longer stop at the first 500 receipts per direction,
-  deleted receipts can be shown too, and transactions show additional fields
-  such as the counterparty's bank details. The `--direction` flag on
-  `receipts show` is gone; it is no longer needed.
+- `receipts show` now finds every receipt (lookups used to stop at the
+  newest 500 per direction) and can also show deleted receipts. The
+  `--direction` flag is gone; it is no longer needed.
+- `transactions show` shows additional fields, such as the counterparty's
+  bank details.
 
 ### Fixed
 
