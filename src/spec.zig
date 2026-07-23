@@ -357,17 +357,26 @@ const receipts_verbs = [_]Verb{
     .{
         .name = "show",
         .summary = "a single receipt",
-        .usage = "butler receipts show <id> [--direction inbound|outbound]",
+        .usage = "butler receipts show <id>",
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
+        .notes =
+        \\Show a single receipt by its id_by_customer, fetched directly.
+        \\Deleted receipts are shown too (deleted: 1).
+        ,
+    },
+    .{
+        .name = "download",
+        .summary = "save a receipt's stored file",
+        .usage = "butler receipts download <id> [--file <path>]",
         .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer" }},
         .flags = &.{
-            .{ .name = "direction", .arg = "inbound|outbound", .help = "narrow the lookup", .choices = &.{ "inbound", "outbound" } },
+            .{ .name = "file", .arg = "path", .help = "destination path (default: the receipt's filename in BHB)" },
         },
         .notes =
-        \\Show a single receipt by its id_by_customer.
-        \\
-        \\BHB's get-by-id route returns HTTP 404 (server-side bug), so butler looks
-        \\the id up via the list endpoint; at most 500 receipts per direction are
-        \\searched. Pass --direction to narrow the lookup.
+        \\Save the receipt's stored document — the file shown in the web app's
+        \\receipt preview — to a local file. Without --file the document is named
+        \\like the receipt in BHB (PDF, or XML for an xRechnung receipt) and
+        \\written to the current directory. An existing file is overwritten.
         ,
     },
     .{
@@ -742,7 +751,7 @@ const debtors_verbs = [_]Verb{
 
 pub const commands = [_]Command{
     .{ .name = "transactions", .summary = "bank transactions (list, show, book, settle, link, unlink, receipts)", .verbs = &transactions_verbs },
-    .{ .name = "receipts", .summary = "receipts / documents (list, show, upload, delete, book, pay)", .verbs = &receipts_verbs },
+    .{ .name = "receipts", .summary = "receipts / documents (list, show, download, upload, delete, book, pay)", .verbs = &receipts_verbs },
     .{ .name = "bookings", .aliases = &.{"postings"}, .summary = "bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings", .verbs = &bookings_verbs },
     .{ .name = "accounts", .summary = "chart of accounts (list, show, add, update)", .verbs = &accounts_verbs },
     .{ .name = "creditors", .summary = "creditors / Kreditoren (list, show, add, update)", .verbs = &creditors_verbs },

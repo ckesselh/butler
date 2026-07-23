@@ -1,5 +1,6 @@
-//! `receipts` resource: list, show (via the list endpoint — get-by-id is
-//! broken server-side), upload (base64 JSON payload), delete.
+//! `receipts` resource: list, show and download via the direct
+//! `/receipts/get/<id>` route (path-segment id, object-shaped `data`; see
+//! docs/bhb-api-quirks.md), upload (base64 JSON payload), delete.
 
 const std = @import("std");
 const cli = @import("../cli.zig");
@@ -90,6 +91,85 @@ fn upload(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.I
     var r = try c.post("/receipts/upload", o.items());
     defer r.deinit(c.gpa);
     return output.reportWrite(c.gpa, stderr, r, "upload", c.api_key);
+}
+
+/// `receipts download <id>` — save the stored receipt file. The by-id get
+/// route returns it base64-encoded in `file_content` when `get_file` is set;
+/// `e_invoice_type` 2 (xRechnung) is XML, everything else PDF.
+fn download(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !u8 {
+    const gpa = c.gpa;
+    const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
+    const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
+
+    const path = try std.fmt.allocPrint(gpa, "/receipts/get/{d}", .{idn});
+    var o = try json.ObjBuilder.init(gpa);
+    try o.str("api_key", c.api_key);
+    try o.boolean("get_file", true);
+    try o.end();
+    var r = try c.post(path, o.items());
+    defer r.deinit(gpa);
+
+    if (r.status != 200 or !json.bodySuccess(gpa, r.body)) {
+        const shown = try json.redactAlloc(gpa, r.body, c.api_key);
+        try stderr.print("download: HTTP {d} {s}\n", .{ r.status, shown });
+        return 1;
+    }
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, r.body, .{}) catch {
+        try stderr.writeAll("download: unparseable response body\n");
+        return 1;
+    };
+    // A miss answers 200 with an empty `data` ARRAY instead of an object.
+    const data: std.json.ObjectMap = switch (parsed.value) {
+        .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
+            .object => |d| d,
+            else => {
+                try stderr.writeAll("not found.\n");
+                return 1;
+            },
+        },
+        else => {
+            try stderr.writeAll("not found.\n");
+            return 1;
+        },
+    };
+    const b64 = json.getStr(data, "file_content") orelse {
+        try stderr.writeAll("download: response carries no file_content\n");
+        return 1;
+    };
+
+    const dec = std.base64.standard.Decoder;
+    const size = dec.calcSizeForSlice(b64) catch {
+        try stderr.writeAll("download: invalid base64 in file_content\n");
+        return 1;
+    };
+    const bytes = try gpa.alloc(u8, size);
+    dec.decode(bytes, b64) catch {
+        try stderr.writeAll("download: invalid base64 in file_content\n");
+        return 1;
+    };
+
+    // Destination: --file wins; else the receipt's BHB filename (basename
+    // only, it is server-provided) plus the extension e_invoice_type implies.
+    const out_path = f.opt("file") orelse blk: {
+        const raw_name = json.getStr(data, "filename") orelse id;
+        const name = std.fs.path.basename(raw_name);
+        const et = if (data.get("e_invoice_type")) |v| try json.valueToAlloc(gpa, v) else "";
+        const ext = if (std.mem.eql(u8, et, "2")) "xml" else "pdf";
+        break :blk try std.fmt.allocPrint(gpa, "{s}.{s}", .{ if (name.len > 0) name else id, ext });
+    };
+
+    var file = std.Io.Dir.cwd().createFile(c.io, out_path, .{}) catch |e| {
+        try stderr.print("error: cannot write {s}: {s}\n", .{ out_path, @errorName(e) });
+        return 1;
+    };
+    defer file.close(c.io);
+    var fbuf: [4096]u8 = undefined;
+    var fw = file.writer(c.io, &fbuf);
+    try fw.interface.writeAll(bytes);
+    try fw.interface.flush();
+
+    try stderr.print("download: wrote {s} ({d} bytes)\n", .{ out_path, bytes.len });
+    return 0;
 }
 
 /// `receipts book <id>` — book a receipt onto account(s) via
@@ -243,29 +323,46 @@ fn absCents(s: ?[]const u8) i64 {
     return if (v < 0) -v else v;
 }
 
-/// Find a receipt by id_by_customer, trying inbound then outbound (the get-by-id
-/// route is broken; see receipts show). Returns its object, aliasing an arena
-/// kept alive for the rest of the run.
+/// Find a receipt by id_by_customer via the direct `/receipts/get/<id>`
+/// route (a miss answers 200 with an empty `data` ARRAY). The route also
+/// returns soft-deleted receipts, so those are rejected here — settling a
+/// deleted receipt must not be possible. Returns its object, aliasing an
+/// arena kept alive for the rest of the run.
 fn findReceipt(c: Client, rid: []const u8, stderr: *std.Io.Writer) !?std.json.ObjectMap {
-    for ([_][]const u8{ "inbound", "outbound" }) |dir| {
-        var o = try json.ObjBuilder.init(c.gpa);
-        try o.str("api_key", c.api_key);
-        try o.str("list_direction", dir);
-        try o.int("limit", 500);
-        try o.end();
-        var r = try c.post("/receipts/get", o.items());
-        defer r.deinit(c.gpa);
-        const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch continue;
-        const rows = output.dataArray(parsed.value) orelse continue;
-        for (rows) |row| switch (row) {
-            .object => |obj| {
-                const id = json.getStr(obj, "id_by_customer") orelse continue;
-                if (std.mem.eql(u8, id, rid)) return obj;
+    const ridn = std.fmt.parseInt(i64, rid, 10) catch {
+        try stderr.print("error: receipt id '{s}' is not an integer\n", .{rid});
+        return null;
+    };
+    const path = try std.fmt.allocPrint(c.gpa, "/receipts/get/{d}", .{ridn});
+    var o = try json.ObjBuilder.init(c.gpa);
+    try o.str("api_key", c.api_key);
+    try o.end();
+    var r = try c.post(path, o.items());
+    defer r.deinit(c.gpa);
+
+    const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch {
+        try stderr.print("error: receipt {s}: unparseable response\n", .{rid});
+        return null;
+    };
+    if (r.status == 200 and json.envelopeSuccess(parsed.value)) {
+        switch (parsed.value) {
+            .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
+                .object => |obj| {
+                    // `deleted` is "0"/"1" (string or number depending on the
+                    // route); compare the rendered form.
+                    const deleted = if (obj.get("deleted")) |v| try json.valueToAlloc(c.gpa, v) else "";
+                    if (std.mem.eql(u8, deleted, "1")) {
+                        try stderr.print("error: receipt {s} is deleted\n", .{rid});
+                        return null;
+                    }
+                    return obj;
+                },
+                else => {},
             },
             else => {},
-        };
+        }
     }
-    try stderr.print("error: receipt {s} not found (the lookup scans the 500 most recent per direction)\n", .{rid});
+    try stderr.print("error: receipt {s} not found\n", .{rid});
     return null;
 }
 
@@ -301,13 +398,14 @@ fn findReceiptCreditor(c: Client, rid: []const u8, rdate: []const u8, credit_not
     return null;
 }
 
-const Verb = enum { list, show, upload, delete, book, pay };
+const Verb = enum { list, show, download, upload, delete, book, pay };
 
 pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
-    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|upload|delete|book|pay");
+    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|download|upload|delete|book|pay");
     switch (v) {
         .book => return book(c, f, stdout, stderr),
         .pay => return pay(c, f, stdout, stderr),
+        .download => return download(c, f, stderr),
         .list => {
             // Require and validate the inbound/outbound direction (positional).
             const dir = f.pos(2) orelse return cli.missing(stderr, "<inbound|outbound>");
@@ -330,46 +428,39 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
         },
         .show => {
-            // The get-by-id route 404s server-side (docs/bhb-api-quirks.md), so
-            // fetch via the list endpoint and match the id client-side, like
-            // transactions show. /receipts/get requires list_direction: query
-            // the given --direction, or both. The API caps a page at 500 rows,
-            // so the lookup sees at most 500 receipts per direction.
+            // Direct read: POST /receipts/get/<id> (path-segment id), with an
+            // object-shaped `data` on a hit and 200 + empty ARRAY on a miss
+            // (docs/bhb-api-quirks.md). Soft-deleted receipts are returned too
+            // (`deleted: "1"`), so a show can inspect them.
             const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
             const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
-            const canon = try std.fmt.allocPrint(c.gpa, "{d}", .{idn});
-
-            const both = [_][]const u8{ "inbound", "outbound" };
-            var one: [1][]const u8 = .{""};
-            var directions: []const []const u8 = &both;
-            if (f.opt("direction")) |d| {
-                one[0] = d;
-                directions = &one;
-            }
-
-            for (directions) |dir| {
-                var o = try json.ObjBuilder.init(c.gpa);
-                try o.str("api_key", c.api_key);
-                try o.str("list_direction", dir);
-                try o.int("limit", 500);
-                try o.end();
-                var r = try c.post("/receipts/get", o.items());
-                defer r.deinit(c.gpa);
-                if (try output.tryEmitShow(c.gpa, stdout, stderr, r, out_mode, canon, c.api_key)) |code| return code;
-            }
-            try stderr.writeAll("not found.\n");
-            return 1;
+            const path = try std.fmt.allocPrint(c.gpa, "/receipts/get/{d}", .{idn});
+            var o = try json.ObjBuilder.init(c.gpa);
+            try o.str("api_key", c.api_key);
+            try o.end();
+            var r = try c.post(path, o.items());
+            defer r.deinit(c.gpa);
+            return (try output.emitShowObject(c.gpa, stdout, stderr, r, out_mode, c.api_key)) orelse {
+                try stderr.writeAll("not found.\n");
+                return 1;
+            };
         },
         .upload => return upload(c, f, stdout, stderr),
         .delete => {
-            // Build the delete body from the id.
+            // The route takes the id as a path segment: POST
+            // /receipts/delete/<id> with only api_key in the body. The spec's
+            // "/receipts/delete/id_by_customer" names the path placeholder;
+            // posting to that literal path makes the server parse the segment
+            // "id_by_customer" as the id and reject it with error_code 5
+            // (docs/bhb-api-quirks.md).
             const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
+            const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
+            const path = try std.fmt.allocPrint(c.gpa, "/receipts/delete/{d}", .{idn});
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
-            try o.str("id_by_customer", id);
             try o.end();
 
-            var r = try c.post("/receipts/delete/id_by_customer", o.items());
+            var r = try c.post(path, o.items());
             defer r.deinit(c.gpa);
             return output.reportWrite(c.gpa, stderr, r, "delete", c.api_key);
         },
