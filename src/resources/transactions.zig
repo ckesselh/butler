@@ -1,5 +1,6 @@
 //! `transactions` resource: list with server-side filters, and show via the
-//! list endpoint id-range workaround (the get-by-id route is broken server-side).
+//! direct `/transactions/get/<id>` route (path-segment id, object-shaped
+//! `data`; see docs/bhb-api-quirks.md).
 
 const std = @import("std");
 const cli = @import("../cli.zig");
@@ -65,22 +66,22 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
         },
         .show => {
-            // Require a numeric id.
+            // Direct read: POST /transactions/get/<id> (path-segment id),
+            // object-shaped `data`; a miss answers HTTP 400 "transaction not
+            // found" (docs/bhb-api-quirks.md). Returns more fields than the
+            // list rows (e.g. account_number, bank_code).
             const id = f.pos(2) orelse return cli.missing(stderr, "<id> (e.g. `transactions show 749`)");
             const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
-
-            // /…/get/id_by_customer 404s; id bounds are BOTH exclusive → [id-1, id+1].
-            // Saturating ±1 so an i64-extremity id can't trap under ReleaseSafe.
+            const path = try std.fmt.allocPrint(c.gpa, "/transactions/get/{d}", .{idn});
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
-            try o.int("id_by_customer_from", idn -| 1);
-            try o.int("id_by_customer_to", idn +| 1);
             try o.end();
-            var r = try c.post("/transactions/get", o.items());
+            var r = try c.post(path, o.items());
             defer r.deinit(c.gpa);
-            // Match canonically: argv may carry "0417"/"+417"; the API says 417.
-            const canon = try std.fmt.allocPrint(c.gpa, "{d}", .{idn});
-            return output.emitShow(c.gpa, stdout, stderr, r, out_mode, canon, c.api_key);
+            return (try output.emitShowObject(c.gpa, stdout, stderr, r, out_mode, c.api_key)) orelse {
+                try stderr.writeAll("not found.\n");
+                return 1;
+            };
         },
     }
 }

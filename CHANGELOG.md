@@ -4,6 +4,28 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `receipts download <id>`: saves a receipt's stored document (the file you
+  see in the web app's receipt preview) locally. By default the file is named
+  like the receipt in BHB; `--file <path>` picks another destination.
+
+### Changed
+
+- `receipts show` and `transactions show` fetch the record directly by id.
+  Receipt lookups no longer stop at the first 500 receipts per direction,
+  deleted receipts can be shown too, and transactions show additional fields
+  such as the counterparty's bank details. The `--direction` flag on
+  `receipts show` is gone; it is no longer needed.
+
+### Fixed
+
+- `receipts delete` now works. It previously failed with "invalid receipt
+  id_by_customer specified" for every id. Deleting a booked receipt also
+  removes the receipt's booking.
+
 ## [0.3.2] - 2026-07-14
 
 A small fix-up release: bookings whose VAT comes from account automation now

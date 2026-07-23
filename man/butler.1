@@ -20,7 +20,7 @@ for piping into \fBjq\fR.
 bank transactions (list, show, book, settle, link, unlink, receipts)
 .TP
 .B receipts
-receipts / documents (list, show, upload, delete, book, pay)
+receipts / documents (list, show, download, upload, delete, book, pay)
 .TP
 .B bookings
 bookings: add (free/extended), list, unconfirm, assign, delete; alias: postings
@@ -263,24 +263,30 @@ They are NOT the same: a receipt can be booked yet unpaid, or paid yet
 .br
 the window bounded.
 .br
-.SS butler receipts show <id> [\-\-direction inbound|outbound]
+.SS butler receipts show <id>
+.TP
+.B id
+receipt id_by_customer
+.PP
+Show a single receipt by its id_by_customer, fetched directly.
+.br
+Deleted receipts are shown too (deleted: 1).
+.br
+.SS butler receipts download <id> [\-\-file <path>]
 .TP
 .B id
 receipt id_by_customer
 .TP
-.B \-\-direction inbound|outbound
-narrow the lookup
-.br
-values: inbound, outbound
+.B \-\-file path
+destination path (default: the receipt's filename in BHB)
 .PP
-Show a single receipt by its id_by_customer.
+Save the receipt's stored document — the file shown in the web app's
 .br
-.PP
-BHB's get\-by\-id route returns HTTP 404 (server\-side bug), so butler looks
+receipt preview — to a local file. Without \-\-file the document is named
 .br
-the id up via the list endpoint; at most 500 receipts per direction are
+like the receipt in BHB (PDF, or XML for an xRechnung receipt) and
 .br
-searched. Pass \-\-direction to narrow the lookup.
+written to the current directory. An existing file is overwritten.
 .br
 .SS butler receipts upload <file> \-\-type <type> [flags]
 .TP

@@ -329,6 +329,51 @@ pub fn tryEmitShowBy(
     return 0;
 }
 
+/// Single-record rendering for the direct `*/get/<id>` routes, whose `data` is
+/// an OBJECT on a hit. A miss is inconsistent across resources — receipts
+/// answer 200 with an empty `data` ARRAY, transactions answer HTTP 400
+/// `"transaction not found"` — so both map to null ("no such record") and the
+/// caller prints its not-found line. Any other failure renders the API error
+/// and returns its exit code.
+pub fn emitShowObject(
+    gpa: std.mem.Allocator,
+    stdout: *std.Io.Writer,
+    stderr: *std.Io.Writer,
+    resp: http.Response,
+    out_mode: spec.Output,
+    secret: []const u8,
+) !?u8 {
+    const parsed: ?std.json.Parsed(std.json.Value) =
+        std.json.parseFromSlice(std.json.Value, gpa, resp.body, .{}) catch null;
+    if (resp.status != 200 or parsed == null or !json.envelopeSuccess(parsed.?.value)) {
+        if (std.mem.indexOf(u8, resp.body, "not found") != null) return null;
+        return try fail(gpa, stderr, resp, secret);
+    }
+
+    const o: std.json.ObjectMap = switch (parsed.?.value) {
+        .object => |env| switch (env.get("data") orelse std.json.Value{ .null = {} }) {
+            .object => |d| d,
+            else => return null,
+        },
+        else => return null,
+    };
+
+    // JSON mode emits just the record, matching the list-based show verbs.
+    if (out_mode == .json) {
+        const s = try json.valueToAlloc(gpa, std.json.Value{ .object = o });
+        try stdout.print("{s}\n", .{s});
+        return 0;
+    }
+
+    // Print the object as one key/value line per field.
+    var it = o.iterator();
+    while (it.next()) |e| {
+        const v = try json.valueToAlloc(gpa, e.value_ptr.*);
+        try stdout.print("{s}: {s}\n", .{ e.key_ptr.*, v });
+    }
+    return 0;
+}
+
 /// Report a write-verb outcome (`<what>: ok` / redacted error) to stderr and
 /// return the process exit code.
 pub fn reportWrite(gpa: std.mem.Allocator, stderr: *std.Io.Writer, resp: http.Response, what: []const u8, secret: []const u8) !u8 {

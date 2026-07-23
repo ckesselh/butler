@@ -22,6 +22,7 @@ butler <resource> <verb> [flags]
 - [**receipts**](#receipts-1)
   - [`list`](#list-1)
   - [`show`](#show-1)
+  - [`download`](#download)
   - [`upload`](#upload)
   - [`delete`](#delete)
   - [`book`](#book-1)
@@ -223,7 +224,7 @@ butler transactions receipts <tx> [--confirmed-only]
 
 ## receipts
 
-receipts / documents (list, show, upload, delete, book, pay)
+receipts / documents (list, show, download, upload, delete, book, pay)
 
 ### `list`
 
@@ -267,7 +268,22 @@ the window bounded.
 a single receipt
 
 ```
-butler receipts show <id> [--direction inbound|outbound]
+butler receipts show <id>
+```
+
+**Arguments:**
+
+- `id` — receipt id_by_customer
+
+Show a single receipt by its id_by_customer, fetched directly.
+Deleted receipts are shown too (deleted: 1).
+
+### `download`
+
+save a receipt's stored file
+
+```
+butler receipts download <id> [--file <path>]
 ```
 
 **Arguments:**
@@ -276,13 +292,12 @@ butler receipts show <id> [--direction inbound|outbound]
 
 **Flags:**
 
-- `--direction <inbound|outbound>` — narrow the lookup. Values: `inbound`, `outbound`
+- `--file <path>` — destination path (default: the receipt's filename in BHB)
 
-Show a single receipt by its id_by_customer.
-
-BHB's get-by-id route returns HTTP 404 (server-side bug), so butler looks
-the id up via the list endpoint; at most 500 receipts per direction are
-searched. Pass --direction to narrow the lookup.
+Save the receipt's stored document — the file shown in the web app's
+receipt preview — to a local file. Without --file the document is named
+like the receipt in BHB (PDF, or XML for an xRechnung receipt) and
+written to the current directory. An existing file is overwritten.
 
 ### `upload`
 
