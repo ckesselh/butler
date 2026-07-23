@@ -70,8 +70,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             // object-shaped `data`; a miss answers HTTP 400 "transaction not
             // found" (docs/bhb-api-quirks.md). Returns more fields than the
             // list rows (e.g. account_number, bank_code).
-            const id = f.pos(2) orelse return cli.missing(stderr, "<id> (e.g. `transactions show 749`)");
-            const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
+            const idn = f.posInt(2) orelse return cli.missing(stderr, "<id> (e.g. `transactions show 749`)");
             const path = try std.fmt.allocPrint(c.gpa, "/transactions/get/{d}", .{idn});
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
@@ -93,8 +92,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
 /// required by the API and sent as one null per line (open-item postings off).
 fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !u8 {
     const gpa = c.gpa;
-    const tx = f.pos(2) orelse return cli.missing(stderr, "<transaction-id>");
-    const txn = std.fmt.parseInt(i64, tx, 10) catch return cli.missing(stderr, "<transaction-id> to be an integer");
+    const txn = f.posInt(2) orelse return cli.missing(stderr, "<transaction-id>");
 
     const lines = switch (try postingline.gather(c, f, stderr)) {
         .lines => |l| l,
@@ -128,10 +126,8 @@ fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.
 /// only (sets payment_date); it does NOT settle — that is `settle` / `receipts
 /// pay`.
 fn assign(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer, path: []const u8, what: []const u8) !u8 {
-    const tx = f.pos(2) orelse return cli.missing(stderr, "<transaction-id>");
-    const rid = f.pos(3) orelse return cli.missing(stderr, "<receipt-id>");
-    const txn = std.fmt.parseInt(i64, tx, 10) catch return cli.missing(stderr, "<transaction-id> to be an integer");
-    const ridn = std.fmt.parseInt(i64, rid, 10) catch return cli.missing(stderr, "<receipt-id> to be an integer");
+    const txn = f.posInt(2) orelse return cli.missing(stderr, "<transaction-id>");
+    const ridn = f.posInt(3) orelse return cli.missing(stderr, "<receipt-id>");
 
     var o = try json.ObjBuilder.init(c.gpa);
     try o.str("api_key", c.api_key);
@@ -148,8 +144,7 @@ fn assign(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer, path: []const 
 /// One bank line can clear several invoices; their amounts must sum to the
 /// transaction. Delegates to the shared settle core in the receipts module.
 fn settle(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !u8 {
-    const tx = f.pos(2) orelse return cli.missing(stderr, "<transaction-id>");
-    const txn = std.fmt.parseInt(i64, tx, 10) catch return cli.missing(stderr, "<transaction-id> to be an integer");
+    const txn = f.posInt(2) orelse return cli.missing(stderr, "<transaction-id>");
     const csv = f.opt("receipts") orelse return cli.missing(stderr, "--receipts <id,id,...>");
 
     var rids: std.ArrayList([]const u8) = .empty;
@@ -163,8 +158,7 @@ fn settle(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.I
 /// `transactions receipts <tx>` — list the receipts assigned to a transaction
 /// (`/transactions/assigned-receipts/get`).
 fn assignedReceipts(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
-    const tx = f.pos(2) orelse return cli.missing(stderr, "<transaction-id>");
-    const txn = std.fmt.parseInt(i64, tx, 10) catch return cli.missing(stderr, "<transaction-id> to be an integer");
+    const txn = f.posInt(2) orelse return cli.missing(stderr, "<transaction-id>");
 
     var o = try json.ObjBuilder.init(c.gpa);
     try o.str("api_key", c.api_key);

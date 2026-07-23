@@ -10,6 +10,8 @@ const cli = @import("../cli.zig");
 const spec = @import("../spec.zig");
 const json = @import("../util/json.zig");
 const money = @import("../util/money.zig");
+const tax = @import("../util/tax.zig");
+const postingline = @import("postingline.zig");
 const output = @import("../output.zig");
 const Client = @import("../client.zig").Client;
 
@@ -47,12 +49,12 @@ const ListDecor = struct {
         // tax: documented German label for the numeric tax_key, with the raw key
         // kept in brackets so a wrong or missing mapping can never hide the truth.
         if (json.getStr(row.*, "tax_key")) |k| {
-            const cell = if (spec.taxKeyLabel(k)) |lbl| cell: {
+            const cell = if (tax.taxKeyLabel(k)) |lbl| cell: {
                 // Account-driven VAT: a "keine Ust." key with a non-zero rate is
                 // VAT carried on the account (e.g. Sachbezug accounts), which BHB
                 // shows as "NN% USt." — trust the rate, keep the raw key visible.
-                if (std.mem.eql(u8, lbl, spec.no_vat_label))
-                    if (spec.vatRatePrefix(json.getStr(row.*, "vat"))) |rate|
+                if (std.mem.eql(u8, lbl, tax.no_vat_label))
+                    if (tax.vatRatePrefix(json.getStr(row.*, "vat"))) |rate|
                         break :cell try std.fmt.allocPrint(gpa, "{s}% USt. [{s}]", .{ rate, k });
                 break :cell try std.fmt.allocPrint(gpa, "{s} [{s}]", .{ lbl, k });
             } else try std.fmt.allocPrint(gpa, "[{s}] ?unmapped", .{k});
@@ -79,10 +81,10 @@ const ListDecor = struct {
     // body is a superset of the API's. Added only when known, so a consumer can
     // still rely on the raw tax_key / account numbers when no decode exists.
     fn applyJson(self: *const ListDecor, gpa: std.mem.Allocator, row: *std.json.ObjectMap) !void {
-        if (json.getStr(row.*, "tax_key")) |k| if (spec.taxKeyLabel(k)) |lbl| {
+        if (json.getStr(row.*, "tax_key")) |k| if (tax.taxKeyLabel(k)) |lbl| {
             // Mirror the table's account-driven-VAT handling (see applyTable).
-            const label = if (std.mem.eql(u8, lbl, spec.no_vat_label))
-                if (spec.vatRatePrefix(json.getStr(row.*, "vat"))) |rate|
+            const label = if (std.mem.eql(u8, lbl, tax.no_vat_label))
+                if (tax.vatRatePrefix(json.getStr(row.*, "vat"))) |rate|
                     try std.fmt.allocPrint(gpa, "{s}% USt.", .{rate})
                 else
                     lbl
@@ -194,10 +196,8 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
     switch (v) {
         .assign => {
             // Link a receipt to an existing free posting made before it arrived.
-            const rid = f.pos(2) orelse return cli.missing(stderr, "<receipt-id>");
-            const pid = f.pos(3) orelse return cli.missing(stderr, "<posting-id>");
-            const ridn = std.fmt.parseInt(i64, rid, 10) catch return cli.missing(stderr, "<receipt-id> to be an integer");
-            const pidn = std.fmt.parseInt(i64, pid, 10) catch return cli.missing(stderr, "<posting-id> to be an integer");
+            const ridn = f.posInt(2) orelse return cli.missing(stderr, "<receipt-id>");
+            const pidn = f.posInt(3) orelse return cli.missing(stderr, "<posting-id>");
 
             var o = try json.ObjBuilder.init(c.gpa);
             try o.str("api_key", c.api_key);
@@ -239,8 +239,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
         .add => return add(c, f, stdout, stderr),
         .unconfirm => {
             // Require a numeric posting id.
-            const id = f.pos(2) orelse return cli.missing(stderr, "<id>");
-            const idn = std.fmt.parseInt(i64, id, 10) catch return cli.missing(stderr, "<id> to be an integer");
+            const idn = f.posInt(2) orelse return cli.missing(stderr, "<id>");
 
             // Build the unconfirm body and report the result.
             var o = try json.ObjBuilder.init(c.gpa);
@@ -415,29 +414,17 @@ fn lineErr(stderr: *std.Io.Writer, idx: usize, what: []const u8) !u8 {
 
 /// Validate every line (BHB rejects negative amounts, equal debit/credit
 /// accounts and bad vat codes) and canonicalize each amount, so the payload
-/// sent later is exactly what was validated. Returns an exit code when a line
-/// is rejected; null when all lines pass.
+/// sent later is exactly what was validated. The amount/vat rules are the
+/// shared postingline ones; the debit≠credit rule is specific to free
+/// bookings. Returns an exit code when a line is rejected; null when all pass.
 fn validateLines(gpa: std.mem.Allocator, lines: []FreeLine, stderr: *std.Io.Writer) !?u8 {
     for (lines, 0..) |*l, i| {
-        const cents = money.parseCents(l.amount) orelse {
-            try stderr.print("line {d}: amount '{s}' is not a valid decimal\n", .{ i, l.amount });
-            return 1;
-        };
-        if (cents <= 0) {
-            try stderr.print("line {d}: amount must be positive (direction comes from debit/credit)\n", .{i});
-            return 1;
-        }
-        if (!spec.isValidVat(l.vat)) {
-            try stderr.print("line {d}: invalid vat '{s}'. valid:", .{ i, l.vat });
-            for (spec.vat_codes) |v| try stderr.print(" {s}", .{v});
-            try stderr.writeByte('\n');
-            return 1;
-        }
         if (l.debit == l.credit) {
             try stderr.print("line {d}: debit and credit accounts must differ\n", .{i});
             return 1;
         }
-        l.amount = try money.renderCentsAlloc(gpa, cents);
+        l.amount = (try postingline.canonicalizeAmountVat(gpa, l.amount, l.vat, i, " (direction comes from debit/credit)", stderr)) orelse
+            return 1;
     }
     return null;
 }

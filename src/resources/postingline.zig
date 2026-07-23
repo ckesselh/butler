@@ -111,23 +111,41 @@ pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !Result {
         return .{ .fail = 1 };
     }
     for (lines.items, 0..) |*l, i| {
-        const cents = money.parseCents(l.amount) orelse {
-            try stderr.print("line {d}: amount '{s}' is not a valid decimal\n", .{ i, l.amount });
+        l.amount = (try canonicalizeAmountVat(gpa, l.amount, l.vat, i, "", stderr)) orelse
             return .{ .fail = 1 };
-        };
-        if (cents <= 0) {
-            try stderr.print("line {d}: amount must be positive\n", .{i});
-            return .{ .fail = 1 };
-        }
-        if (!spec.isValidVat(l.vat)) {
-            try stderr.print("line {d}: invalid vat '{s}'. valid:", .{ i, l.vat });
-            for (spec.vat_codes) |v| try stderr.print(" {s}", .{v});
-            try stderr.writeByte('\n');
-            return .{ .fail = 1 };
-        }
-        l.amount = try money.renderCentsAlloc(gpa, cents);
     }
     return .{ .lines = lines.items };
+}
+
+/// Validate one posting line's amount (positive decimal, at most two fraction
+/// digits) and vat (a documented symbolic code), printing the shared per-line
+/// diagnostics. Returns the canonical amount rendering — the bytes sent are
+/// exactly the bytes checked — or null after reporting. `positive_hint` is
+/// appended to the must-be-positive message (free bookings explain that
+/// direction comes from the debit/credit pair).
+pub fn canonicalizeAmountVat(
+    gpa: std.mem.Allocator,
+    amount: []const u8,
+    vat: []const u8,
+    idx: usize,
+    positive_hint: []const u8,
+    stderr: *std.Io.Writer,
+) !?[]const u8 {
+    const cents = money.parseCents(amount) orelse {
+        try stderr.print("line {d}: amount '{s}' is not a valid decimal\n", .{ idx, amount });
+        return null;
+    };
+    if (cents <= 0) {
+        try stderr.print("line {d}: amount must be positive{s}\n", .{ idx, positive_hint });
+        return null;
+    }
+    if (!spec.isValidVat(vat)) {
+        try stderr.print("line {d}: invalid vat '{s}'. valid:", .{ idx, vat });
+        for (spec.vat_codes) |v| try stderr.print(" {s}", .{v});
+        try stderr.writeByte('\n');
+        return null;
+    }
+    return try money.renderCentsAlloc(gpa, cents);
 }
 
 fn lineMissing(stderr: *std.Io.Writer, idx: usize, field: []const u8) !Result {
