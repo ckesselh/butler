@@ -16,7 +16,15 @@ pub const Line = struct {
     postingtext: []const u8,
     amount: []const u8,
     vat: []const u8,
+    /// The receipt whose open item this line clears, for the endpoints that
+    /// carry `oi_receipts_ids_by_customer`. Null on a plain line.
+    receipt: ?[]const u8 = null,
 };
+
+/// What the calling verb allows per line. `/postings/add/transaction` can point
+/// individual lines at a receipt; `/postings/add/receipt` cannot, because there
+/// the receipt is the anchor of the whole posting.
+pub const Options = struct { receipt_refs: bool = false };
 
 /// The validated lines, or the process exit code to return when the input was
 /// malformed (the diagnostic is already printed).
@@ -28,6 +36,9 @@ pub const Arrays = struct {
     texts: [][]const u8,
     vats: [][]const u8,
     amounts: [][]const u8,
+    /// Parallel to the others, for `oi_receipts_ids_by_customer`; every element
+    /// is null unless the caller gathered with `receipt_refs`.
+    receipts: []?[]const u8,
 };
 
 pub fn toArrays(gpa: std.mem.Allocator, lines: []const Line) !Arrays {
@@ -37,12 +48,14 @@ pub fn toArrays(gpa: std.mem.Allocator, lines: []const Line) !Arrays {
         .texts = try gpa.alloc([]const u8, n),
         .vats = try gpa.alloc([]const u8, n),
         .amounts = try gpa.alloc([]const u8, n),
+        .receipts = try gpa.alloc(?[]const u8, n),
     };
     for (lines, 0..) |l, i| {
         a.accounts[i] = l.account;
         a.texts[i] = l.postingtext;
         a.vats[i] = l.vat;
         a.amounts[i] = l.amount;
+        a.receipts[i] = l.receipt;
     }
     return a;
 }
@@ -50,14 +63,14 @@ pub fn toArrays(gpa: std.mem.Allocator, lines: []const Line) !Arrays {
 /// Gather the lines from --from-json or the single-line flags, validate each
 /// (positive amount, known vat) and canonicalize the amount so the bytes sent
 /// are exactly the bytes checked.
-pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !Result {
+pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer, opts: Options) !Result {
     const gpa = c.gpa;
     var lines: std.ArrayList(Line) = .empty;
 
     if (f.opt("from-json")) |path| {
         // The two input modes are exclusive; a stray line flag would otherwise
         // be silently ignored in favour of the file.
-        for ([_][]const u8{ "account", "amount", "vat", "text" }) |name| {
+        for ([_][]const u8{ "account", "amount", "vat", "text", "receipt" }) |name| {
             if (f.opt(name) != null) {
                 try stderr.print("error: --{s} cannot be combined with --from-json (the file defines the lines)\n", .{name});
                 return .{ .fail = 2 };
@@ -93,6 +106,7 @@ pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !Result {
                 .postingtext = json.getStr(o, "postingtext") orelse return lineMissing(stderr, idx, "postingtext"),
                 .amount = json.getStr(o, "amount") orelse return lineMissing(stderr, idx, "amount"),
                 .vat = json.getStr(o, "vat") orelse return lineMissing(stderr, idx, "vat"),
+                .receipt = json.getStr(o, "receipt"),
             };
             try lines.append(gpa, line);
         }
@@ -102,6 +116,7 @@ pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !Result {
             .postingtext = f.opt("text") orelse return flagMissing(stderr, "--text"),
             .amount = f.opt("amount") orelse return flagMissing(stderr, "--amount"),
             .vat = f.opt("vat") orelse return flagMissing(stderr, "--vat (e.g. 0_none, 19_pre)"),
+            .receipt = f.opt("receipt"),
         };
         try lines.append(gpa, line);
     }
@@ -113,6 +128,16 @@ pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer) !Result {
     for (lines.items, 0..) |*l, i| {
         l.amount = (try canonicalizeAmountVat(gpa, l.amount, l.vat, i, "", stderr)) orelse
             return .{ .fail = 1 };
+        if (l.receipt) |rid| {
+            if (!opts.receipt_refs) {
+                try stderr.print("line {d}: 'receipt' is only supported by `transactions book`; here the receipt is the anchor of the whole posting\n", .{i});
+                return .{ .fail = 1 };
+            }
+            _ = std.fmt.parseInt(i64, std.mem.trim(u8, rid, " \t"), 10) catch {
+                try stderr.print("line {d}: receipt '{s}' is not an id_by_customer\n", .{ i, rid });
+                return .{ .fail = 1 };
+            };
+        }
     }
     return .{ .lines = lines.items };
 }

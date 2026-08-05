@@ -86,15 +86,16 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
 }
 
 /// `transactions book <tx>` — post one or more lines directly onto a bank
-/// transaction (`/postings/add/transaction`), no receipt. Single line from
+/// transaction (`/postings/add/transaction`). Single line from
 /// --account/--amount/--vat/--text, or a split from --from-json. New postings
-/// land confirmed, like a free booking. `oi_receipts_ids_by_customer` is
-/// required by the API and sent as one null per line (open-item postings off).
+/// land confirmed, like a free booking. A line carries the receipt whose open
+/// item it clears in `oi_receipts_ids_by_customer`, null where it clears none,
+/// so one payment can settle a receipt and book an extra amount beside it.
 fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !u8 {
     const gpa = c.gpa;
     const txn = f.posInt(2) orelse return cli.missing(stderr, "<transaction-id>");
 
-    const lines = switch (try postingline.gather(c, f, stderr)) {
+    const lines = switch (try postingline.gather(c, f, stderr, .{ .receipt_refs = true })) {
         .lines => |l| l,
         .fail => |code| return code,
     };
@@ -107,7 +108,7 @@ fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.
     try o.arrStr("postingtexts", a.texts);
     try o.arrStr("vats", a.vats);
     try o.arrStr("amounts", a.amounts);
-    try o.arrNull("oi_receipts_ids_by_customer", lines.len);
+    try o.arrStrOrNull("oi_receipts_ids_by_customer", a.receipts);
     try o.end();
     const body = try o.toOwnedSlice();
 
