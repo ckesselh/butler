@@ -120,10 +120,10 @@ Show a single transaction by its id_by_customer.
 
 ### `book`
 
-book a payment directly onto account(s), no receipt
+book a payment directly onto account(s)
 
 ```
-butler transactions book <tx> (--account A --amount N --vat V --text T | --from-json <file>)
+butler transactions book <tx> (--account A --amount N --vat V --text T [--receipt R] | --from-json <file>)
 ```
 
 **Arguments:**
@@ -132,20 +132,37 @@ butler transactions book <tx> (--account A --amount N --vat V --text T | --from-
 
 **Flags:**
 
-- `--from-json <file>` — JSON array of {account, postingtext, vat, amount} split lines
+- `--from-json <file>` — JSON array of {account, postingtext, vat, amount, receipt?} split lines
 - `--account <acct>` — single line: posting account (e.g. 3841)
 - `--amount <n>` — single line: positive amount, e.g. 9.70
-- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_2`, `7_both_app`
+- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_506`, `19_both_511`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_both_6501`, `19_both_6506`, `19_both_6511`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_506`, `19_both_app_511`, `19_both_app_2`, `7_both_app`
 - `--text <s>` — single line: posting text
+- `--receipt <id>` — single line: clear this receipt's open item with the line
 - `--dry-run` — print the redacted payload, send nothing
 
 Posts directly onto a bank transaction (/postings/add/transaction) — the
-web UI "book on a payment" action, no receipt involved. The transaction
-is the contra side, so you give only the account(s) being charged: a
-single --account books the whole payment, or --from-json splits it across
-accounts. New postings land confirmed (see `bookings add`). The booking
-is a transaction-class posting, so it shows under `--account
-"all financial accounts"`, not under "Erweitertes Buchen".
+web UI "book on a payment" action. The transaction is the contra side,
+so you give only the account(s) being charged: a single --account books
+the whole payment, or --from-json splits it across accounts. New postings
+land confirmed (see `bookings add`). The booking is a transaction-class
+posting, so it shows under `--account "all financial accounts"`, not
+under "Erweitertes Buchen".
+
+A line may name a `receipt`, which clears that receipt's open item —
+the same line `receipts pay` would post, with its creditor as the
+account. Use it when a payment does NOT equal its receipt: both
+`receipts book` and `receipts pay` reject a mismatch (error_code 37 and
+27), because the postings must sum to the receipt and to the payment
+respectively. Booking the payment instead lets the receipt line settle
+at the receipt's amount while a second line takes the difference:
+
+  [ {"account":"70000","amount":"29.99","vat":"0_none",
+     "postingtext":"Ausgleich Beleg 000128","receipt":"292"},
+    {"account":"6390","amount":"0.01","vat":"0_none",
+     "postingtext":"Aufrundungsspende"} ]
+
+Rounding, a tip or a bank charge collected with the invoice all fit this
+shape. Lines without `receipt` post plainly, as they always did.
 
 ### `settle`
 
@@ -353,7 +370,7 @@ butler receipts book <id> (--account A --amount N --vat V --text T | --from-json
 - `--from-json <file>` — JSON array of {account, postingtext, vat, amount} split lines
 - `--account <acct>` — single line: posting account (e.g. 6815)
 - `--amount <n>` — single line: positive amount, e.g. 36.97
-- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_2`, `7_both_app`
+- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_506`, `19_both_511`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_both_6501`, `19_both_6506`, `19_both_6511`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_506`, `19_both_app_511`, `19_both_app_2`, `7_both_app`
 - `--text <s>` — single line: posting text
 - `--creditor <acct>` — creditor Sammelkonto (inbound invoice)
 - `--debtor <acct>` — debtor Sammelkonto (outbound invoice)
@@ -446,7 +463,7 @@ butler bookings add (--from-json <file> | <line flags>) [flags]
 - `--debit <acct>` — single line: debit account
 - `--credit <acct>` — single line: credit account
 - `--amount <n>` — single line: positive amount, e.g. 5000.00
-- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_2`, `7_both_app`
+- `--vat <code>` — single line: vat code. Values: `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_506`, `19_both_511`, `19_both_2`, `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`, `19_both_6501`, `19_both_6506`, `19_both_6511`, `19_pre_app`, `7_pre_app`, `19_both_app_1`, `19_both_app_506`, `19_both_app_511`, `19_both_app_2`, `7_both_app`
 - `--text <s>` — single line: posting text
 - `--cost-location <s>` — optional cost location
 - `--clearing <acct>` — assert this account nets to zero before sending

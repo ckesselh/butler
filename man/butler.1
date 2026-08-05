@@ -107,13 +107,13 @@ transaction id_by_customer
 .PP
 Show a single transaction by its id_by_customer.
 .br
-.SS butler transactions book <tx> (\-\-account A \-\-amount N \-\-vat V \-\-text T | \-\-from\-json <file>)
+.SS butler transactions book <tx> (\-\-account A \-\-amount N \-\-vat V \-\-text T [\-\-receipt R] | \-\-from\-json <file>)
 .TP
 .B tx
 transaction id_by_customer
 .TP
 .B \-\-from\-json file
-JSON array of {account, postingtext, vat, amount} split lines
+JSON array of {account, postingtext, vat, amount, receipt?} split lines
 .TP
 .B \-\-account acct
 single line: posting account (e.g. 3841)
@@ -124,27 +124,59 @@ single line: positive amount, e.g. 9.70
 .B \-\-vat code
 single line: vat code
 .br
-values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_2, 7_both_app
+values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_506, 19_both_511, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_both_6501, 19_both_6506, 19_both_6511, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_506, 19_both_app_511, 19_both_app_2, 7_both_app
 .TP
 .B \-\-text s
 single line: posting text
+.TP
+.B \-\-receipt id
+single line: clear this receipt's open item with the line
 .TP
 .B \-\-dry\-run
 print the redacted payload, send nothing
 .PP
 Posts directly onto a bank transaction (/postings/add/transaction) — the
 .br
-web UI "book on a payment" action, no receipt involved. The transaction
+web UI "book on a payment" action. The transaction is the contra side,
 .br
-is the contra side, so you give only the account(s) being charged: a
+so you give only the account(s) being charged: a single \-\-account books
 .br
-single \-\-account books the whole payment, or \-\-from\-json splits it across
+the whole payment, or \-\-from\-json splits it across accounts. New postings
 .br
-accounts. New postings land confirmed (see `bookings add`). The booking
+land confirmed (see `bookings add`). The booking is a transaction\-class
 .br
-is a transaction\-class posting, so it shows under `\-\-account
+posting, so it shows under `\-\-account "all financial accounts"`, not
 .br
-"all financial accounts"`, not under "Erweitertes Buchen".
+under "Erweitertes Buchen".
+.br
+.PP
+A line may name a `receipt`, which clears that receipt's open item —
+.br
+the same line `receipts pay` would post, with its creditor as the
+.br
+account. Use it when a payment does NOT equal its receipt: both
+.br
+`receipts book` and `receipts pay` reject a mismatch (error_code 37 and
+.br
+27), because the postings must sum to the receipt and to the payment
+.br
+respectively. Booking the payment instead lets the receipt line settle
+.br
+at the receipt's amount while a second line takes the difference:
+.br
+.PP
+  [ {"account":"70000","amount":"29.99","vat":"0_none",
+.br
+     "postingtext":"Ausgleich Beleg 000128","receipt":"292"},
+.br
+    {"account":"6390","amount":"0.01","vat":"0_none",
+.br
+     "postingtext":"Aufrundungsspende"} ]
+.br
+.PP
+Rounding, a tip or a bank charge collected with the invoice all fit this
+.br
+shape. Lines without `receipt` post plainly, as they always did.
 .br
 .SS butler transactions settle <tx> \-\-receipts <id,id,...> [\-\-dry\-run]
 .TP
@@ -340,7 +372,7 @@ single line: positive amount, e.g. 36.97
 .B \-\-vat code
 single line: vat code
 .br
-values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_2, 7_both_app
+values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_506, 19_both_511, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_both_6501, 19_both_6506, 19_both_6511, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_506, 19_both_app_511, 19_both_app_2, 7_both_app
 .TP
 .B \-\-text s
 single line: posting text
@@ -466,7 +498,7 @@ single line: positive amount, e.g. 5000.00
 .B \-\-vat code
 single line: vat code
 .br
-values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_2, 7_both_app
+values: 0_none, 19_vat, 7_vat, 19_pre, 7_pre, 19_both_1, 19_both_506, 19_both_511, 19_both_2, 7_both, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_both_6501, 19_both_6506, 19_both_6511, 19_pre_app, 7_pre_app, 19_both_app_1, 19_both_app_506, 19_both_app_511, 19_both_app_2, 7_both_app
 .TP
 .B \-\-text s
 single line: posting text

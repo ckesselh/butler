@@ -98,11 +98,21 @@ pub const Command = struct {
 /// of the API spec, so they are hard-coded. Re-verify on BHB API version bumps.
 /// This is the one canonical copy — the --vat flag's choices and the JSON-line
 /// validator in resources/bookings.zig both reference it.
+/// The §13b family distinguishes where the supplier sits, because the UStVA
+/// reports the two cases on different lines: a service from a supplier in
+/// another EU member state (§ 13b Abs. 1) belongs in Kz 46/47, one from a
+/// supplier abroad (§ 13b Abs. 2 Nr. 1) in Kz 84/85, with the input tax of both
+/// in Kz 67. `19_both_1` predates the split and does not say which case it is;
+/// `19_both_506` and `19_both_511` do.
 pub const vat_codes = [_][]const u8{
-    "0_none",           "19_vat",           "7_vat",         "19_pre",
-    "7_pre",            "19_both_1",        "19_both_2",     "7_both",
-    "19_both_1_no_pre", "19_both_2_no_pre", "7_both_no_pre", "19_pre_app",
-    "7_pre_app",        "19_both_app_1",    "19_both_app_2", "7_both_app",
+    "0_none",        "19_vat",           "7_vat",
+    "19_pre",        "7_pre",            "19_both_1",
+    "19_both_506",   "19_both_511",      "19_both_2",
+    "7_both",        "19_both_1_no_pre", "19_both_2_no_pre",
+    "7_both_no_pre", "19_both_6501",     "19_both_6506",
+    "19_both_6511",  "19_pre_app",       "7_pre_app",
+    "19_both_app_1", "19_both_app_506",  "19_both_app_511",
+    "19_both_app_2", "7_both_app",
 };
 
 pub fn isValidVat(v: []const u8) bool {
@@ -172,25 +182,42 @@ const transactions_verbs = [_]Verb{
     },
     .{
         .name = "book",
-        .summary = "book a payment directly onto account(s), no receipt",
-        .usage = "butler transactions book <tx> (--account A --amount N --vat V --text T | --from-json <file>)",
+        .summary = "book a payment directly onto account(s)",
+        .usage = "butler transactions book <tx> (--account A --amount N --vat V --text T [--receipt R] | --from-json <file>)",
         .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
         .flags = &.{
-            .{ .name = "from-json", .arg = "file", .help = "JSON array of {account, postingtext, vat, amount} split lines" },
+            .{ .name = "from-json", .arg = "file", .help = "JSON array of {account, postingtext, vat, amount, receipt?} split lines" },
             .{ .name = "account", .arg = "acct", .help = "single line: posting account (e.g. 3841)" },
             .{ .name = "amount", .arg = "n", .help = "single line: positive amount, e.g. 9.70" },
             .{ .name = "vat", .arg = "code", .help = "single line: vat code", .choices = &vat_codes },
             .{ .name = "text", .arg = "s", .help = "single line: posting text" },
+            .{ .name = "receipt", .arg = "id", .help = "single line: clear this receipt's open item with the line" },
             .{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" },
         },
         .notes =
         \\Posts directly onto a bank transaction (/postings/add/transaction) — the
-        \\web UI "book on a payment" action, no receipt involved. The transaction
-        \\is the contra side, so you give only the account(s) being charged: a
-        \\single --account books the whole payment, or --from-json splits it across
-        \\accounts. New postings land confirmed (see `bookings add`). The booking
-        \\is a transaction-class posting, so it shows under `--account
-        \\"all financial accounts"`, not under "Erweitertes Buchen".
+        \\web UI "book on a payment" action. The transaction is the contra side,
+        \\so you give only the account(s) being charged: a single --account books
+        \\the whole payment, or --from-json splits it across accounts. New postings
+        \\land confirmed (see `bookings add`). The booking is a transaction-class
+        \\posting, so it shows under `--account "all financial accounts"`, not
+        \\under "Erweitertes Buchen".
+        \\
+        \\A line may name a `receipt`, which clears that receipt's open item —
+        \\the same line `receipts pay` would post, with its creditor as the
+        \\account. Use it when a payment does NOT equal its receipt: both
+        \\`receipts book` and `receipts pay` reject a mismatch (error_code 37 and
+        \\27), because the postings must sum to the receipt and to the payment
+        \\respectively. Booking the payment instead lets the receipt line settle
+        \\at the receipt's amount while a second line takes the difference:
+        \\
+        \\  [ {"account":"70000","amount":"29.99","vat":"0_none",
+        \\     "postingtext":"Ausgleich Beleg 000128","receipt":"292"},
+        \\    {"account":"6390","amount":"0.01","vat":"0_none",
+        \\     "postingtext":"Aufrundungsspende"} ]
+        \\
+        \\Rounding, a tip or a bank charge collected with the invoice all fit this
+        \\shape. Lines without `receipt` post plainly, as they always did.
         ,
     },
     .{
