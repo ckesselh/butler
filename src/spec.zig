@@ -152,10 +152,10 @@ const comment_note =
     \\The comment is 2-210 characters, counted as characters rather than bytes,
     \\and is checked before anything is sent.
     \\
-    \\/comments/add is write-only: BHB offers no endpoint to read, edit or remove
-    \\a comment. A comment can be read back only as the `comment` column of the
-    \\posting carrying that receipt or transaction (`bookings list --comments`),
-    \\and correcting one is a web-UI job (docs/bhb-api-quirks.md).
+    \\/comments/add is the only endpoint in the comments namespace: no get, no
+    \\update, no delete. Reading a comment back goes through the postings view,
+    \\which carries it as the row's `comment` field (`bookings list --comments`);
+    \\changing or removing one is a web-UI job (docs/bhb-api-quirks.md).
 ;
 
 // --- the command tree ---

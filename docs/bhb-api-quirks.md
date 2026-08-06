@@ -52,7 +52,8 @@ sections.
 | 17 | GAP | No get-by-id for postings (`/postings/get/<id>` does not exist) | By-id routes |
 | 18 | GAP | `/settings` resources: no search/filter, no get-one, no delete | Accounts & subledgers |
 | 19 | INCONSISTENT | By-id miss behaviour differs: receipts answer 200 with an empty array (and switch `data`'s shape), transactions answer HTTP 400 | By-id routes |
-| 20 | GAP | Comments are write-only: no get/update/delete, and readable only as a field on `/postings/get` rows | Comments |
+| 20 | GAP | Comments: no get/update/delete endpoint; readable only as a field on `/postings/get` rows | Comments |
+| 21 | DOCS | `/comments/add` unknown-id errors are 9/10 ("… was not found"), not the documented 5/6 | Comments |
 
 ## Authentication
 
@@ -322,10 +323,11 @@ sections.
 
 ## Comments (`/comments/add`)
 
-- `[GAP]` **Comments are write-only.** `/comments/add` is the only comments
-  endpoint: there is no `/comments/get`, `/comments/update` or
-  `/comments/delete`. A comment can be created and then never corrected or
-  removed through the API — only in the web UI. **[confirmed]**
+- `[GAP]` **`/comments/add` is the only endpoint in the namespace:** there is no
+  `/comments/get`, `/comments/update` or `/comments/delete`. A comment can be
+  created and then never corrected or removed through the API — only in the web
+  UI. Reading one back is possible, but only via `/postings/get` (next item).
+  **[confirmed]**
 - `[GAP]` **A comment can only be read back through `/postings/get`,** which
   returns it in the row's `comment` field. Since `/postings/get` offers no
   receipt or transaction id filter (only a mandatory date span, accounts,
@@ -340,8 +342,13 @@ sections.
   *butler: checked locally before the request, so an over-long comment is a
   usage error rather than a round trip.*
 - `[FYI]` **Exactly one of `receipt_id_by_customer` /
-  `transaction_id_by_customer`** must be sent; the rejected id yields
-  `error_code` 6 or 5 respectively. **[spec]**
+  `transaction_id_by_customer`** must be sent. **[spec]**
+- `[DOCS]` **The documented error codes for an unknown id are wrong.** The spec
+  lists `400 (5)` "invalid transaction_id_by_customer specified" and `400 (6)`
+  "invalid receipt_id_by_customer specified". The live API instead answers
+  `{"success":false,"error_code":9,"message":"transaction was not found"}` and
+  `{"success":false,"error_code":10,"message":"receipt was not found"}`. Codes 5
+  and 6 were not observed. **[verified 2026-08-07]**
 
 ---
 

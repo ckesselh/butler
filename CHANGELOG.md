@@ -9,9 +9,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `receipts comment <id> --text "…"` and `transactions comment <tx> --text "…"`
-  write the comment the web app shows on a Beleg or a Zahlung. BHB offers no
-  way to read, change or remove a comment through the API, so a wrong one still
-  has to be fixed in the web app.
+  write the comment the web app shows on a Beleg or a Zahlung. Comments can only
+  be added this way, never changed or removed, so a wrong one still has to be
+  fixed in the web app.
 - `bookings list --comments` shows those comments, in a `comment` column. It is
   off by default because a comment runs to 210 characters and would crowd out
   the rest of the table. `--output json` has always carried the field.

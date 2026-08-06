@@ -256,13 +256,13 @@ The comment is 2\-210 characters, counted as characters rather than bytes,
 and is checked before anything is sent.
 .br
 .PP
-/comments/add is write\-only: BHB offers no endpoint to read, edit or remove
+/comments/add is the only endpoint in the comments namespace: no get, no
 .br
-a comment. A comment can be read back only as the `comment` column of the
+update, no delete. Reading a comment back goes through the postings view,
 .br
-posting carrying that receipt or transaction (`bookings list \-\-comments`),
+which carries it as the row's `comment` field (`bookings list \-\-comments`);
 .br
-and correcting one is a web\-UI job (docs/bhb\-api\-quirks.md).
+changing or removing one is a web\-UI job (docs/bhb\-api\-quirks.md).
 .br
 .SS butler receipts list <inbound|outbound> [flags]
 .TP
@@ -476,13 +476,13 @@ The comment is 2\-210 characters, counted as characters rather than bytes,
 and is checked before anything is sent.
 .br
 .PP
-/comments/add is write\-only: BHB offers no endpoint to read, edit or remove
+/comments/add is the only endpoint in the comments namespace: no get, no
 .br
-a comment. A comment can be read back only as the `comment` column of the
+update, no delete. Reading a comment back goes through the postings view,
 .br
-posting carrying that receipt or transaction (`bookings list \-\-comments`),
+which carries it as the row's `comment` field (`bookings list \-\-comments`);
 .br
-and correcting one is a web\-UI job (docs/bhb\-api\-quirks.md).
+changing or removing one is a web\-UI job (docs/bhb\-api\-quirks.md).
 .br
 .SS butler bookings list \-\-date\-from D \-\-date\-to D [flags]
 .TP
