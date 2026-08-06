@@ -4,7 +4,10 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-08-06
+
+This release covers the payment that does not match its receipt, and tells apart
+the two §13b cases that belong on different lines of the Umsatzsteuervoranmeldung.
 
 ### Added
 
