@@ -29,11 +29,17 @@ const std = @import("std");
 ///   absent here render as unmapped rather than guessed, and the table should be
 ///   extended only against a known-good reference.
 ///
+///   The §13b rows are the exception to "undocumented": those symbolic codes
+///   carry the numeric key in their own name (`19_both_511` ↔ key 511), so the
+///   spec pins the number and its label together.
+///
 ///   TWO NUMBERING SCHEMES — the same tax treatment reads back under different
 ///   numeric keys depending on how the posting was CREATED:
 ///     - Web UI / DATEV import → single-digit legacy keys (0, 8, 9, 18, 19, …).
 ///     - API `/postings/add/*` (i.e. every posting butler writes) → 4xx/7xx
 ///       keys (401, 402, 701, 702), plus 94 for §13b which is shared.
+///   The §13b 5xx keys sit in neither scheme: they distinguish the place of
+///   supply, not the origin of the posting, and both schemes can produce them.
 ///   The label is identical per treatment; only the number differs by origin.
 ///   Both schemes are listed below so butler can decode the very postings it
 ///   writes — without the 4xx/7xx rows, every butler-created booking would show
@@ -55,6 +61,12 @@ pub const tax_keys = [_]TaxKey{
     .{ .key = "20", .symbolic = "0_none", .label = "keine Ust." },
     // Shared between both schemes.
     .{ .key = "94", .symbolic = "19_both_1", .label = "§13b 19% USt./VSt." },
+    // §13b split by where the supplier sits, which decides the UStVA line
+    // (Abs. 1 → Kz 46/47, Abs. 2 Nr. 1 → Kz 84/85). Key and label both come
+    // from the documented symbolic code; 511 also observed on a posting the web
+    // UI labels "Drittland (§ 13b Abs. 2 Nr. 1)".
+    .{ .key = "506", .symbolic = "19_both_506", .label = "§13b 19% USt./VSt. (EU §13b Abs. 1)" },
+    .{ .key = "511", .symbolic = "19_both_511", .label = "§13b 19% USt./VSt. (Drittland §13b Abs. 2 Nr. 1)" },
     // API-write keys (every posting butler creates). Same treatment/label as
     // the legacy keys above, distinct number. 401 and 702 confirmed against the
     // BHB web UI; 402 and 701 follow from the documented label of the symbolic
@@ -112,6 +124,11 @@ test "taxKeyLabel decodes known keys and rejects unknown" {
     try std.testing.expectEqualStrings("7% Vst.", taxKeyLabel("402").?);
     try std.testing.expectEqualStrings("i.g.E. 19% USt./VSt.", taxKeyLabel("701").?);
     try std.testing.expectEqualStrings("i.g.E. 7% USt./VSt.", taxKeyLabel("702").?);
+    // The §13b variants say where the supplier sits, which decides the UStVA
+    // line: Abs. 1 (EU) is reported in Kz 46/47, Abs. 2 Nr. 1 (abroad) in
+    // Kz 84/85. Key 94 predates the split and says neither.
+    try std.testing.expectEqualStrings("§13b 19% USt./VSt. (EU §13b Abs. 1)", taxKeyLabel("506").?);
+    try std.testing.expectEqualStrings("§13b 19% USt./VSt. (Drittland §13b Abs. 2 Nr. 1)", taxKeyLabel("511").?);
     // An undocumented key is reported as unknown, never guessed.
     try std.testing.expect(taxKeyLabel("23") == null);
 }

@@ -172,7 +172,7 @@ fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.
     const cred = std.fmt.parseInt(i64, f.opt("creditor") orelse cred_default, 10) catch return cli.missing(stderr, "--creditor to be an account number");
     const deb = std.fmt.parseInt(i64, f.opt("debtor") orelse "0", 10) catch return cli.missing(stderr, "--debtor to be an account number");
 
-    const lines = switch (try postingline.gather(c, f, stderr)) {
+    const lines = switch (try postingline.gather(c, f, stderr, .{})) {
         .lines => |l| l,
         .fail => |code| return code,
     };

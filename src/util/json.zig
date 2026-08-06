@@ -83,6 +83,24 @@ pub const ObjBuilder = struct {
         try self.buf.append(self.gpa, ']');
     }
 
+    /// `"k": ["a",null,...]`: JSON-escaped strings for the set elements, `null`
+    /// for the unset ones. `/postings/add/transaction` takes
+    /// `oi_receipts_ids_by_customer` in this shape — a receipt id on the lines
+    /// that clear that receipt's open item, null on the lines that do not.
+    pub fn arrStrOrNull(self: *ObjBuilder, k: []const u8, vals: []const ?[]const u8) !void {
+        try self.key(k);
+        try self.buf.append(self.gpa, '[');
+        for (vals, 0..) |v, i| {
+            if (i != 0) try self.buf.append(self.gpa, ',');
+            if (v) |s| {
+                try writeString(self.gpa, &self.buf, s);
+            } else {
+                try self.buf.appendSlice(self.gpa, "null");
+            }
+        }
+        try self.buf.append(self.gpa, ']');
+    }
+
     /// `"k": [null, null, ...]` with `n` JSON nulls. `/postings/add/transaction`
     /// requires `oi_receipts_ids_by_customer` even when open-item postings are
     /// off, in which case it is one null per line.
@@ -208,6 +226,31 @@ test "ObjBuilder builds an object" {
     try o.boolean("c", true);
     try o.end();
     try std.testing.expectEqualStrings("{\"a\":\"x\",\"b\":42,\"c\":true}", o.items());
+}
+
+test "arrStrOrNull mixes ids and nulls" {
+    // oi_receipts_ids_by_customer carries a receipt id on the line that clears
+    // that receipt's open item and null on the line that clears none, so one
+    // payment can settle a receipt and book the difference beside it.
+    const gpa = std.testing.allocator;
+    var o = try ObjBuilder.init(gpa);
+    defer o.deinit();
+    try o.arrStrOrNull("oi", &.{ "292", null });
+    try o.end();
+    try std.testing.expectEqualStrings("{\"oi\":[\"292\",null]}", o.items());
+}
+
+test "arrStrOrNull of all nulls matches arrNull" {
+    const gpa = std.testing.allocator;
+    var a = try ObjBuilder.init(gpa);
+    defer a.deinit();
+    try a.arrStrOrNull("oi", &.{ null, null });
+    try a.end();
+    var b = try ObjBuilder.init(gpa);
+    defer b.deinit();
+    try b.arrNull("oi", 2);
+    try b.end();
+    try std.testing.expectEqualStrings(b.items(), a.items());
 }
 
 test "writeString rejects invalid UTF-8" {

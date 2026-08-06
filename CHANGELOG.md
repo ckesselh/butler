@@ -4,6 +4,24 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `transactions book` can settle a receipt and book a second amount in the same
+  payment — the web app's split payment with a receipt assigned to one line
+  only. For a bank line that does not match its receipt: a card terminal that
+  rounded up for a donation, a tip, a bank charge taken with the invoice. Name
+  the receipt on the line that clears it (`--receipt`, or `"receipt"` in
+  `--from-json`); the other line takes the difference. `receipts pay` still
+  covers the ordinary case where payment and receipt are equal.
+- The two `§13b` rates that separate an EU supplier from one outside the EU,
+  `19_both_506` (§ 13b Abs. 1) and `19_both_511` (§ 13b Abs. 2 Nr. 1) — the
+  same choice the web app offers under "§13b 19/16% USt./VSt.". The two go on
+  different lines of the Umsatzsteuervoranmeldung, so it matters which one you
+  book. Bookings that use them now show their label instead of `?unmapped`.
+  `19_both_1` still works and still says neither.
+
 ## [0.4.0] - 2026-07-23
 
 This release fixes receipt deletion, adds downloading a receipt's stored
