@@ -24,6 +24,15 @@ const Client = @import("../client.zig").Client;
 // (JSON output ignores this set; it re-serialises the enriched envelope.)
 const cols = [_][]const u8{ "date", "booking_number", "soll", "haben", "amount", "tax", "fixed", "receipt", "tx", "postingtext" };
 
+// `bookings list --comments`: the same set plus the posting's `comment`. A
+// comment is attached to a receipt or a transaction (`receipts comment` /
+// `transactions comment`) and surfaces here on the posting that carries it —
+// /postings/get is the only endpoint that returns it. Opt-in because comments
+// run to 210 characters and would dominate the default table. JSON output is
+// unaffected either way: it re-serialises the whole envelope, `comment`
+// included, whether or not the flag is passed.
+const cols_with_comment = cols ++ [_][]const u8{"comment"};
+
 const AccountNames = std.StringHashMapUnmanaged([]const u8);
 
 /// Per-row decorator state for `bookings list`: the resolved chart of accounts
@@ -234,7 +243,8 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             // json mode. The debit/credit accounts resolve to names via one extra
             // API call; if that lookup fails, putNamed falls back to bare numbers.
             var decor = ListDecor{ .accounts = try fetchAccountNames(c, stderr) };
-            return output.emitListDecorated(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key, decor.make());
+            const shown: []const []const u8 = if (f.has("comments")) &cols_with_comment else &cols;
+            return output.emitListDecorated(c.gpa, stdout, stderr, r, shown, out_mode, f.opt("filter"), c.api_key, decor.make());
         },
         .add => return add(c, f, stdout, stderr),
         .unconfirm => {

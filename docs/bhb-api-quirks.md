@@ -52,6 +52,7 @@ sections.
 | 17 | GAP | No get-by-id for postings (`/postings/get/<id>` does not exist) | By-id routes |
 | 18 | GAP | `/settings` resources: no search/filter, no get-one, no delete | Accounts & subledgers |
 | 19 | INCONSISTENT | By-id miss behaviour differs: receipts answer 200 with an empty array (and switch `data`'s shape), transactions answer HTTP 400 | By-id routes |
+| 20 | GAP | Comments are write-only: no get/update/delete, and readable only as a field on `/postings/get` rows | Comments |
 
 ## Authentication
 
@@ -318,6 +319,29 @@ sections.
   `postingaccount_number` to have BHB assign the next free one; re-query the
   list to learn it. `add/postingaccount` requires the number plus a
   `parent_postingaccount_number`. **[spec]**
+
+## Comments (`/comments/add`)
+
+- `[GAP]` **Comments are write-only.** `/comments/add` is the only comments
+  endpoint: there is no `/comments/get`, `/comments/update` or
+  `/comments/delete`. A comment can be created and then never corrected or
+  removed through the API — only in the web UI. **[confirmed]**
+- `[GAP]` **A comment can only be read back through `/postings/get`,** which
+  returns it in the row's `comment` field. Since `/postings/get` offers no
+  receipt or transaction id filter (only a mandatory date span, accounts,
+  status and cost location), fetching "the comment on receipt N" means sweeping
+  a date window and matching client-side. **[confirmed]** A comment on a
+  receipt or transaction with no posting is therefore unreadable via the API.
+  *butler: `bookings list --comments` adds the column; there is deliberately no
+  `comments list` verb, since it could only guess at the window.*
+- `[FYI]` **`comment_text` is 2..210 characters**, and the limit counts
+  characters rather than bytes — 210 `§` (420 bytes) is accepted. Violations
+  come back as `error_code` 12 (invalid) or 13 (absent). **[confirmed]**
+  *butler: checked locally before the request, so an over-long comment is a
+  usage error rather than a round trip.*
+- `[FYI]` **Exactly one of `receipt_id_by_customer` /
+  `transaction_id_by_customer`** must be sent; the rejected id yields
+  `error_code` 6 or 5 respectively. **[spec]**
 
 ---
 
