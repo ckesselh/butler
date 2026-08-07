@@ -19,6 +19,7 @@ butler <resource> <verb> [flags]
   - [`link`](#link)
   - [`unlink`](#unlink)
   - [`receipts`](#receipts)
+  - [`comment`](#comment)
 - [**receipts**](#receipts-1)
   - [`list`](#list-1)
   - [`show`](#show-1)
@@ -27,6 +28,7 @@ butler <resource> <verb> [flags]
   - [`delete`](#delete)
   - [`book`](#book-1)
   - [`pay`](#pay)
+  - [`comment`](#comment-1)
 - [**bookings**](#bookings)
   - [`list`](#list-2)
   - [`add`](#add)
@@ -237,6 +239,34 @@ butler transactions receipts <tx> [--confirmed-only]
 - `--confirmed-only` — only confirmed assignments
 - `--filter <text>` — case-insensitive substring over the shown columns
 
+### `comment`
+
+attach a comment to a transaction
+
+```
+butler transactions comment <tx> --text <s> [--dry-run]
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+
+**Flags:**
+
+- `--text <s>` — comment text (2-210 characters) *(required)*
+- `--dry-run` — print the redacted payload, send nothing
+
+Add a comment to a bank transaction (the web app's "Kommentar" on the
+Zahlung).
+
+The comment is 2-210 characters, counted as characters rather than bytes,
+and is checked before anything is sent.
+
+/comments/add is the only endpoint in the comments namespace: no get, no
+update, no delete. Reading a comment back goes through the postings view,
+which carries it as the row's `comment` field (`bookings list --comments`);
+changing or removing one is a web-UI job (docs/bhb-api-quirks.md).
+
 ---
 
 ## receipts
@@ -409,6 +439,33 @@ it paid. The account, amount and text are resolved from the receipt's own
 booking, so the happy path is just the two ids. This is NOT
 /transactions/assign/receipt, which only links without settling.
 
+### `comment`
+
+attach a comment to a receipt
+
+```
+butler receipts comment <id> --text <s> [--dry-run]
+```
+
+**Arguments:**
+
+- `id` — receipt id_by_customer
+
+**Flags:**
+
+- `--text <s>` — comment text (2-210 characters) *(required)*
+- `--dry-run` — print the redacted payload, send nothing
+
+Add a comment to a receipt (the web app's "Kommentar" on the Beleg).
+
+The comment is 2-210 characters, counted as characters rather than bytes,
+and is checked before anything is sent.
+
+/comments/add is the only endpoint in the comments namespace: no get, no
+update, no delete. Reading a comment back goes through the postings view,
+which carries it as the row's `comment` field (`bookings list --comments`);
+changing or removing one is a web-UI job (docs/bhb-api-quirks.md).
+
 ---
 
 ## bookings
@@ -434,9 +491,17 @@ butler bookings list --date-from D --date-to D [flags]
 - `--status <s>` — all | fixed | unfixed
 - `--order <s>` — e.g. "date ASC"
 - `--cost-location <s>` — cost location filter
+- `--comments` — add the comment column
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
+
+--comments adds the `comment` column: the note attached to the posting's
+receipt or transaction by `receipts comment` / `transactions comment`.
+/postings/get is the only endpoint that returns comments, so this is the
+only way to read one back. Off by default because a comment runs to 210
+characters and would dominate the table; --output json always carries
+the field regardless.
 
 Columns include a decoded `tax`: the posting's numeric tax_key mapped to
 BHB's documented vat-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The

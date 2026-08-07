@@ -4,6 +4,18 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `receipts comment <id> --text "…"` and `transactions comment <tx> --text "…"`
+  write the comment the web app shows on a Beleg or a Zahlung. Comments can only
+  be added this way, never changed or removed, so a wrong one still has to be
+  fixed in the web app.
+- `bookings list --comments` shows those comments, in a `comment` column. It is
+  off by default because a comment runs to 210 characters and would crowd out
+  the rest of the table. `--output json` has always carried the field.
+
 ## [0.5.0] - 2026-08-06
 
 This release covers the payment that does not match its receipt, and tells apart

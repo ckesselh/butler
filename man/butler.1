@@ -235,6 +235,35 @@ only confirmed assignments
 .TP
 .B \-\-filter text
 case\-insensitive substring over the shown columns
+.SS butler transactions comment <tx> \-\-text <s> [\-\-dry\-run]
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B \-\-text s
+comment text (2\-210 characters) (required)
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Add a comment to a bank transaction (the web app's "Kommentar" on the
+.br
+Zahlung).
+.br
+.PP
+The comment is 2\-210 characters, counted as characters rather than bytes,
+.br
+and is checked before anything is sent.
+.br
+.PP
+/comments/add is the only endpoint in the comments namespace: no get, no
+.br
+update, no delete. Reading a comment back goes through the postings view,
+.br
+which carries it as the row's `comment` field (`bookings list \-\-comments`);
+.br
+changing or removing one is a web\-UI job (docs/bhb\-api\-quirks.md).
+.br
 .SS butler receipts list <inbound|outbound> [flags]
 .TP
 .B inbound|outbound
@@ -428,6 +457,33 @@ booking, so the happy path is just the two ids. This is NOT
 .br
 /transactions/assign/receipt, which only links without settling.
 .br
+.SS butler receipts comment <id> \-\-text <s> [\-\-dry\-run]
+.TP
+.B id
+receipt id_by_customer
+.TP
+.B \-\-text s
+comment text (2\-210 characters) (required)
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Add a comment to a receipt (the web app's "Kommentar" on the Beleg).
+.br
+.PP
+The comment is 2\-210 characters, counted as characters rather than bytes,
+.br
+and is checked before anything is sent.
+.br
+.PP
+/comments/add is the only endpoint in the comments namespace: no get, no
+.br
+update, no delete. Reading a comment back goes through the postings view,
+.br
+which carries it as the row's `comment` field (`bookings list \-\-comments`);
+.br
+changing or removing one is a web\-UI job (docs/bhb\-api\-quirks.md).
+.br
 .SS butler bookings list \-\-date\-from D \-\-date\-to D [flags]
 .TP
 .B \-\-date\-from YYYY\-MM\-DD
@@ -451,6 +507,9 @@ e.g. "date ASC"
 .B \-\-cost\-location s
 cost location filter
 .TP
+.B \-\-comments
+add the comment column
+.TP
 .B \-\-filter text
 case\-insensitive substring over the shown columns
 .TP
@@ -459,6 +518,19 @@ max rows
 .TP
 .B \-\-offset n
 skip the first n rows
+.PP
+\-\-comments adds the `comment` column: the note attached to the posting's
+.br
+receipt or transaction by `receipts comment` / `transactions comment`.
+.br
+/postings/get is the only endpoint that returns comments, so this is the
+.br
+only way to read one back. Off by default because a comment runs to 210
+.br
+characters and would dominate the table; \-\-output json always carries
+.br
+the field regardless.
+.br
 .PP
 Columns include a decoded `tax`: the posting's numeric tax_key mapped to
 .br

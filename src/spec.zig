@@ -139,6 +139,25 @@ const filter_flag = Flag{ .name = "filter", .arg = "text", .help = "case-insensi
 const limit_flag = Flag{ .name = "limit", .arg = "n", .int = true, .min = 1, .help = "max rows" };
 const offset_flag = Flag{ .name = "offset", .arg = "n", .int = true, .min = 0, .help = "skip the first n rows" };
 
+// `receipts comment` / `transactions comment` — the same two flags on both, since
+// /comments/add differs only in which id field names the target.
+const comment_flags = [_]Flag{
+    .{ .name = "text", .required = true, .arg = "s", .help = "comment text (2-210 characters)" },
+    .{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" },
+};
+
+// Shared tail for both comment verbs: what the endpoint does and does not offer.
+const comment_note =
+    \\
+    \\The comment is 2-210 characters, counted as characters rather than bytes,
+    \\and is checked before anything is sent.
+    \\
+    \\/comments/add is the only endpoint in the comments namespace: no get, no
+    \\update, no delete. Reading a comment back goes through the postings view,
+    \\which carries it as the row's `comment` field (`bookings list --comments`);
+    \\changing or removing one is a web-UI job (docs/bhb-api-quirks.md).
+;
+
 // --- the command tree ---
 
 const transactions_verbs = [_]Verb{
@@ -260,6 +279,14 @@ const transactions_verbs = [_]Verb{
             .{ .name = "confirmed-only", .kind = .boolean, .help = "only confirmed assignments" },
             filter_flag,
         },
+    },
+    .{
+        .name = "comment",
+        .summary = "attach a comment to a transaction",
+        .usage = "butler transactions comment <tx> --text <s> [--dry-run]",
+        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
+        .flags = &comment_flags,
+        .notes = "Add a comment to a bank transaction (the web app's \"Kommentar\" on the\nZahlung).\n" ++ comment_note,
     },
 };
 
@@ -387,6 +414,14 @@ const receipts_verbs = [_]Verb{
         \\/transactions/assign/receipt, which only links without settling.
         ,
     },
+    .{
+        .name = "comment",
+        .summary = "attach a comment to a receipt",
+        .usage = "butler receipts comment <id> --text <s> [--dry-run]",
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
+        .flags = &comment_flags,
+        .notes = "Add a comment to a receipt (the web app's \"Kommentar\" on the Beleg).\n" ++ comment_note,
+    },
 };
 
 const bookings_verbs = [_]Verb{
@@ -402,11 +437,19 @@ const bookings_verbs = [_]Verb{
             .{ .name = "status", .arg = "s", .help = "all | fixed | unfixed" },
             .{ .name = "order", .arg = "s", .help = "e.g. \"date ASC\"" },
             .{ .name = "cost-location", .arg = "s", .help = "cost location filter" },
+            .{ .name = "comments", .kind = .boolean, .help = "add the comment column" },
             filter_flag,
             limit_flag,
             offset_flag,
         },
         .notes =
+        \\--comments adds the `comment` column: the note attached to the posting's
+        \\receipt or transaction by `receipts comment` / `transactions comment`.
+        \\/postings/get is the only endpoint that returns comments, so this is the
+        \\only way to read one back. Off by default because a comment runs to 210
+        \\characters and would dominate the table; --output json always carries
+        \\the field regardless.
+        \\
         \\Columns include a decoded `tax`: the posting's numeric tax_key mapped to
         \\BHB's documented vat-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The
         \\numeric key is undocumented, so the mapping is a best-effort, empirically
