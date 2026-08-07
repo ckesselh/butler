@@ -4,7 +4,10 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-08-07
+
+This release adds the comment the web app shows on a Beleg or a Zahlung, and the
+only way the API offers to read one back.
 
 ### Added
 
