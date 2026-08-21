@@ -294,11 +294,14 @@ sections.
   marked in the UI; a posting with a settled receipt differs only in the
   populated `receipts_assigned_*` / `receipts_links` columns. The spec has no
   matching property or parameter either (searched for beleglos, no_receipt,
-  receipt_required, without_receipt, missing). **[verified 2026-08-22]**
+  receipt_required, without_receipt, missing). The mark sits on the payment,
+  not on its posting: it can be set on a booked payment, even one whose posting
+  is already fixed (festgeschrieben), and the posting survives untouched;
+  unbooking first is not needed. **[verified 2026-08-22]**
   - Consequence: the UI filter "Fehlender Beleg" cannot be reproduced exactly
     over the API, and a state reachable in the UI is unreachable by API
-    clients. Unbooking such a payment in the UI to re-flag it also drops its
-    account and posting text, so the posting has to be re-created afterwards.
+    clients. Do not unbook a payment to flag it: unbooking drops its account
+    and posting text, and the flag does not need it.
   - *butler: `transactions list --missing-receipt` computes the anti-join
     (booked payment, no receipt on any posting) and therefore keeps listing
     payments the UI has marked "beleglos"; a local ignore list (e.g. by contra
