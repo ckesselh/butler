@@ -417,13 +417,26 @@ print the redacted payload, send nothing
 .PP
 Books a receipt (/postings/add/receipt): the account line(s) for the
 .br
-expense/revenue. The counterparty Sammelkonto defaults to the standard
+expense/revenue. The endpoint creates receipt\-linked postings with a
 .br
-Kreditoren\-Sammelkonto (70000); pass \-\-creditor for a dedicated creditor,
+creditor/debtor counteraccount; it has no parameter for an independent
 .br
-or \-\-debtor for an outbound invoice (Debitoren\-Sammelkonto 10000). Then
+posting date and cannot express arbitrary debit/credit pairs. The
 .br
-settle it against the payment with `receipts pay <id> \-\-with <tx>`.
+counterparty Sammelkonto defaults to the standard Kreditoren\-Sammelkonto
+.br
+(70000); pass \-\-creditor for a dedicated creditor, or \-\-debtor for an
+.br
+outbound invoice (Debitoren\-Sammelkonto 10000). Then settle it against
+.br
+the payment with `receipts pay <id> \-\-with <tx>`.
+.br
+.PP
+If a receipt needs an independent posting date or arbitrary accounts,
+.br
+create the posting with `bookings add`, then link the existing receipt
+.br
+and posting with `bookings assign`.
 .br
 .SS butler receipts pay <id> \-\-with <tx> [flags]
 .TP
@@ -584,21 +597,21 @@ assert this account nets to zero before sending
 .B \-\-dry\-run
 print the redacted payload, send nothing
 .PP
-Most bookings should NOT use this command. An expense or income tied to
+Creates free postings independently of receipts and bank transactions.
 .br
-an invoice is booked with `receipts book`, and one tied to a bank payment
+Use it for arbitrary debit/credit pairs or an independent posting date,
 .br
-with `transactions book`, so the posting stays ANCHORED to its receipt or
+including a receipt\-backed journal entry that `receipts book` cannot
 .br
-transaction and is re\-booked / settled / decoded through it. Reach for
+express. Link an existing receipt afterwards with `bookings assign`.
 .br
-`bookings add` ONLY for a free, standalone entry ("Erweitertes Buchen")
+Normal creditor/debtor invoices should use `receipts book`; entries tied
 .br
-that has neither a receipt nor a payment — e.g. accruals,
+directly to bank payments should use `transactions book`. A free booking
 .br
-reclassifications, or opening balances. A free booking cannot be deleted
+cannot be deleted via the API (web UI only), so do not use it to
 .br
-via the API (web UI only), so do not use it to experiment.
+experiment.
 .br
 New bookings are created CONFIRMED (visible to the API and the web UI,
 .br
@@ -628,11 +641,15 @@ receipt id_by_customer
 .B posting\-id
 posting id_by_customer
 .PP
-Assign a receipt to an existing free booking
+Links an existing receipt to an existing free posting
 .br
-(/postings/assign/receipt\-to\-free\-posting) — e.g. a booking made before its
+(/postings/assign/receipt\-to\-free\-posting). It creates no posting and
 .br
-receipt arrived.
+changes no accounts, amounts, dates, or creditor/debtor. Because the free
+.br
+posting create endpoint returns no id, re\-query `bookings list` and match
+.br
+the new posting by date, text, amount, and accounts before assigning it.
 .br
 .SS butler bookings delete [id]
 .TP

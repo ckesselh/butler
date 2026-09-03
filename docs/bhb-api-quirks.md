@@ -203,6 +203,18 @@ sections.
   "Erweitertes Buchen" corresponds to `free booking`, so a posting made
   directly on a payment (transaction class) does NOT appear there; it lives
   under `all financial accounts`. **[confirmed, observed via the account filter]**
+- `[FYI]` **Receipt creation, posting creation, and assignment are distinct
+  operations.** `/receipts/upload` creates a receipt and stores its document
+  date. `/postings/add/receipt` creates receipt-linked postings against a
+  creditor/debtor counteraccount, but accepts no independent posting date and
+  cannot express arbitrary debit/credit pairs. For those cases, create the
+  posting with `/postings/add/free`, then call
+  `/postings/assign/receipt-to-free-posting` with the existing receipt and
+  posting IDs. Assignment creates no posting and changes no accounts, amounts,
+  dates, or creditor/debtor; it only adds the relationship. It therefore cannot
+  reclassify an existing receipt posting. The free-posting create endpoints
+  return no IDs, so re-query `/postings/get` and match the new row before
+  assigning it (see "Create endpoints return NO id" above). **[spec]**
 
 ## Receipt file (PDF) download
 
