@@ -217,6 +217,12 @@ one for UI-only review instead, unconfirm it afterwards with
 `butler bookings unconfirm <id>` — but note that an **unconfirmed posting is
 invisible to the API** (BHB ticket 443636), so you can no longer list it.
 
+`--from-json` sends one `/postings/add/free` request per line; the sequence is
+not atomic. The dry run validates the complete file and any clearing-account
+assertion locally, but it cannot test server-side account or VAT rules. If a
+live run fails after creating some lines, query the created postings and retry
+only the missing lines. Do not rerun the complete input.
+
 Upload a receipt:
 
 ```console

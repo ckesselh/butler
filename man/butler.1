@@ -100,6 +100,12 @@ Because /postings/get caps at 1000 rows, keep the window bounded or items
 .br
 past the cap may show as falsely open.
 .br
+The filter applies only to the primary transaction page returned for the
+.br
+current \-\-limit/\-\-offset. Paginate or narrow the date window; omitted
+.br
+primary rows cannot appear in the filtered result.
+.br
 .SS butler transactions show <id>
 .TP
 .B id
@@ -323,6 +329,12 @@ They are NOT the same: a receipt can be booked yet unpaid, or paid yet
 (rarely) unbooked. \-\-unbooked caps at /postings/get's 1000 rows, so keep
 .br
 the window bounded.
+.br
+The filter applies only to the primary receipt page returned for the
+.br
+current \-\-limit/\-\-offset. Paginate or narrow the date window; omitted
+.br
+primary rows cannot appear in the filtered result.
 .br
 .SS butler receipts show <id>
 .TP
@@ -553,7 +565,11 @@ numeric key is undocumented, so the mapping is a best\-effort, empirically
 .br
 derived bridge — the raw key stays in brackets and an unmapped key shows
 .br
-as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+as "[N] ?unmapped", so a wrong/missing label can never hide it. Some
+.br
+automatic accounts return tax_key 0 with a non\-zero vat rate; for those
+.br
+rows the decoded label surfaces that rate instead of "keine Ust." Also
 .br
 `fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
 .br
@@ -612,6 +628,16 @@ directly to bank payments should use `transactions book`. A free booking
 cannot be deleted via the API (web UI only), so do not use it to
 .br
 experiment.
+.br
+A \-\-from\-json run sends one /postings/add/free request per line and is
+.br
+not atomic. \-\-dry\-run validates the whole file and \-\-clearing assertion
+.br
+locally, but cannot test server\-side account or VAT rules. If a later
+.br
+line fails, earlier lines remain: query them and retry only the missing
+.br
+lines; never rerun the complete input.
 .br
 New bookings are created CONFIRMED (visible to the API and the web UI,
 .br

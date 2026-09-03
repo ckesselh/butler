@@ -409,7 +409,7 @@ fn add(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.W
             // Stop on the first failure; report how many already went through.
             const shown = try json.redactAlloc(gpa, r.body, c.api_key);
             try stderr.print("[{d}/{d}] FAILED: {s}\n", .{ i + 1, lines.items.len, shown });
-            try stderr.print("created {d}/{d} line(s) before the failure; review the BHB UI.\n", .{ created, lines.items.len });
+            try stderr.print("created {d}/{d} line(s) before the failure; do not rerun the complete input — query the created rows and retry only missing lines.\n", .{ created, lines.items.len });
             return 1;
         }
     }

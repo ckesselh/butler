@@ -105,6 +105,9 @@ second /postings/get sweep over the window:
                      an unbooked payment has no receipt either.
 Because /postings/get caps at 1000 rows, keep the window bounded or items
 past the cap may show as falsely open.
+The filter applies only to the primary transaction page returned for the
+current --limit/--offset. Paginate or narrow the date window; omitted
+primary rows cannot appear in the filtered result.
 
 ### `show`
 
@@ -309,6 +312,9 @@ Two distinct open-items filters, matching the "Eingangsbelege" screen:
 They are NOT the same: a receipt can be booked yet unpaid, or paid yet
 (rarely) unbooked. --unbooked caps at /postings/get's 1000 rows, so keep
 the window bounded.
+The filter applies only to the primary receipt page returned for the
+current --limit/--offset. Paginate or narrow the date window; omitted
+primary rows cannot appear in the filtered result.
 
 ### `show`
 
@@ -514,7 +520,9 @@ Columns include a decoded `tax`: the posting's numeric tax_key mapped to
 BHB's documented vat-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The
 numeric key is undocumented, so the mapping is a best-effort, empirically
 derived bridge — the raw key stays in brackets and an unmapped key shows
-as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+as "[N] ?unmapped", so a wrong/missing label can never hide it. Some
+automatic accounts return tax_key 0 with a non-zero vat rate; for those
+rows the decoded label surfaces that rate instead of "keine Ust." Also
 `fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
 (assigned invoice number, or — if none) and `tx` (linked bank
 transaction id, or —). The debit/credit accounts resolve to "NNNN Name"
@@ -549,6 +557,11 @@ Normal creditor/debtor invoices should use `receipts book`; entries tied
 directly to bank payments should use `transactions book`. A free booking
 cannot be deleted via the API (web UI only), so do not use it to
 experiment.
+A --from-json run sends one /postings/add/free request per line and is
+not atomic. --dry-run validates the whole file and --clearing assertion
+locally, but cannot test server-side account or VAT rules. If a later
+line fails, earlier lines remain: query them and retry only the missing
+lines; never rerun the complete input.
 New bookings are created CONFIRMED (visible to the API and the web UI,
 still unfixed so they stay editable/deletable in the UI). To stage one
 for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
