@@ -14,7 +14,7 @@ stdenv.mkDerivation {
   pname = "butler";
   # Keep in sync with build.zig.zon (the authoritative copy); CI asserts the
   # two agree.
-  version = "0.6.0";
+  version = "0.7.0";
 
   src = ./.;
 
