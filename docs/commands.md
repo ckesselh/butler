@@ -2,7 +2,7 @@
 
 Generated from `src/spec.zig` by `zig build gen-docs` — do not edit by hand.
 This is the same source the `--help` text and the `man butler` page render
-from. butler 0.6.0.
+from. butler 0.7.0.
 
 ```
 butler <resource> <verb> [flags]

@@ -4,6 +4,23 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-03
+
+This release lets you correct a receipt or payment that was booked incorrectly,
+without leaving a separate reclassification beside the original entry.
+
+### Added
+
+- `transactions unconfirm <tx>` removes an unfixed booking from a payment. The
+  payment returns to the unbooked list; if it had settled a receipt, that
+  receipt becomes unpaid again. Use this first when correcting a paid receipt.
+- `receipts unconfirm <id>` removes an unfixed booking from a receipt. It can
+  then be booked again with the right account, creditor or debtor. A linked
+  payment must be unconfirmed first.
+- `bookings cancel <id>` matches the web app's state-dependent cancellation: an
+  unfixed booking is deleted, while a fixed booking receives a reversal. Check
+  the `fixed` column before using it.
+
 ## [0.6.0] - 2026-08-07
 
 This release adds the comment the web app shows on a Beleg or a Zahlung, and the
