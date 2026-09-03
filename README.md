@@ -43,8 +43,10 @@ a consistent, scriptable interface with `--output json` for piping into `jq`.
   `--filter` substring search, `show <id>`.
 - Write: book a receipt (`receipts book`), a payment (`transactions book`) or a
   free/split entry (`bookings add`); settle receipts against payments
-  (`receipts pay` / `transactions settle`); manage master data with `accounts` /
-  `creditors` / `debtors` `add` & `update`; `upload`, `delete`, `unconfirm`.
+  (`receipts pay` / `transactions settle`); remove unfixed receipt/transaction
+  postings with `unconfirm`; cancel a free posting with `bookings cancel`;
+  manage master data with `accounts` / `creditors` / `debtors` `add` &
+  `update`; upload and delete receipts.
 - `bookings list` decodes the VAT key into its German label and resolves account
   numbers to names; `--output table` (aligned) or `--output json` (raw, pipe to `jq`).
 - AWS-style profiles and credential precedence (env → file).
@@ -273,9 +275,9 @@ debit/credit pair.
 ## Known limitations
 
 The BHB API has a number of non-obvious quirks (symbolic VAT codes, exclusive id
-ranges, get-by-id routes that 404, no posting-delete endpoint, …). They are
-documented in **[docs/bhb-api-quirks.md](docs/bhb-api-quirks.md)**, alongside a
-pointer to the official OpenAPI spec
+ranges, get-by-id routes that 404, state-dependent posting cancellation, …).
+They are documented in **[docs/bhb-api-quirks.md](docs/bhb-api-quirks.md)**,
+alongside a pointer to the official OpenAPI spec
 (<https://app.buchhaltungsbutler.de/docs/api/v1.de.json>).
 
 ## Development

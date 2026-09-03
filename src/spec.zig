@@ -203,6 +203,18 @@ const transactions_verbs = [_]Verb{
         .notes = "Show a single transaction by its id_by_customer.",
     },
     .{
+        .name = "unconfirm",
+        .summary = "remove all unfixed postings from a transaction",
+        .usage = "butler transactions unconfirm <tx> [--dry-run]",
+        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
+        .flags = &.{.{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" }},
+        .notes =
+        \\Remove a transaction's postings through /postings/unconfirm/transaction.
+        \\The endpoint rejects fixed postings. The transaction becomes unbooked;
+        \\any receipt settled by those postings becomes unpaid again.
+        ,
+    },
+    .{
         .name = "book",
         .summary = "book a payment directly onto account(s)",
         .usage = "butler transactions book <tx> (--account A --amount N --vat V --text T [--receipt R] | --from-json <file>)",
@@ -377,6 +389,18 @@ const receipts_verbs = [_]Verb{
         .notes = "Delete a receipt by its id_by_customer.",
     },
     .{
+        .name = "unconfirm",
+        .summary = "remove all unfixed postings from a receipt",
+        .usage = "butler receipts unconfirm <id> [--dry-run]",
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
+        .flags = &.{.{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" }},
+        .notes =
+        \\Remove a receipt's postings through /postings/unconfirm/receipt. The
+        \\endpoint rejects fixed postings. Unconfirm a linked transaction first;
+        \\otherwise BHB rejects a replacement receipt booking.
+        ,
+    },
+    .{
         .name = "book",
         .summary = "book a receipt onto account(s)",
         .usage = "butler receipts book <id> (--account A --amount N --vat V --text T | --from-json <file>) [--creditor C | --debtor D]",
@@ -498,9 +522,9 @@ const bookings_verbs = [_]Verb{
         \\including a receipt-backed journal entry that `receipts book` cannot
         \\express. Link an existing receipt afterwards with `bookings assign`.
         \\Normal creditor/debtor invoices should use `receipts book`; entries tied
-        \\directly to bank payments should use `transactions book`. A free booking
-        \\cannot be deleted via the API (web UI only), so do not use it to
-        \\experiment.
+        \\directly to bank payments should use `transactions book`. Do not use a
+        \\free booking to experiment: `bookings cancel` deletes it only while it
+        \\is unfixed; a fixed posting is reversed instead.
         \\A --from-json run sends one /postings/add/free request per line and is
         \\not atomic. --dry-run validates the whole file and --clearing assertion
         \\locally, but cannot test server-side account or VAT rules. If a later
@@ -536,11 +560,23 @@ const bookings_verbs = [_]Verb{
         ,
     },
     .{
+        .name = "cancel",
+        .summary = "delete an unfixed posting or reverse a fixed posting",
+        .usage = "butler bookings cancel <id> [--dry-run]",
+        .positionals = &.{.{ .name = "id", .help = "posting id_by_customer", .int = true }},
+        .flags = &.{.{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" }},
+        .notes =
+        \\Cancel a posting through /postings/cancel. BHB documents that an
+        \\unfixed posting is deleted, while a fixed posting gets a reversal.
+        \\Check the row's `fixed` value before running this command.
+        ,
+    },
+    .{
         .name = "delete",
-        .summary = "not supported by the BHB API (explains the web-UI path)",
+        .summary = "explain the cancel command",
         .usage = "butler bookings delete [id]",
-        .positionals = &.{.{ .name = "id", .help = "posting id (unused — deletion is web-UI only)" }},
-        .notes = "The BHB API has no posting-delete endpoint; this command only explains\nthat deletion must happen in the web UI, and exits with a usage error.",
+        .positionals = &.{.{ .name = "id", .help = "posting id (use bookings cancel)" }},
+        .notes = "Use `bookings cancel <id>`. BHB documents that it deletes an unfixed\nposting but creates a reversal for a fixed posting.",
     },
 };
 

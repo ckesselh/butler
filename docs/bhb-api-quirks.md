@@ -45,7 +45,7 @@ sections.
 | 10 | INCONSISTENT | `oi_receipts_ids_by_customer` required on `/postings/add/transaction` even with open-item postings disabled | Transaction-linked postings |
 | 11 | INCONSISTENT | `/receipts/add` requires `currency`, `/receipts/upload` does not | Receipts |
 | 12 | DOCS | `/receipts/get` requires `list_direction` but the spec gives no enum of valid values | Listing & filtering |
-| 13 | GAP | No way to delete a posting via the API (web UI only) | Postings |
+| 13 | FYI | `/postings/cancel` deletes unfixed postings but reverses fixed postings | Postings |
 | 14 | GAP | No confirm/lock (Festschreibung) endpoint | Postings |
 | 15 | GAP | Create endpoints return no id (postings, creditors, debtors); callers must re-query and match | Postings, Accounts & subledgers |
 | 16 | GAP | No update endpoint for receipt metadata or currency conversion, although the web UI supports edits | Receipts |
@@ -56,6 +56,7 @@ sections.
 | 21 | DOCS | `/comments/add` unknown-id errors are 9/10 ("… was not found"), not the documented 5/6 | Comments |
 | 22 | GAP | The web UI's "beleglos" (no receipt required) flag on a payment is neither readable nor settable via the API; "Fehlender Beleg" cannot be reproduced exactly | Transaction-linked postings |
 | 23 | BUG | Creditor `additional_address_line` writes return success but remain `null` on API readback | Accounts & subledgers |
+| 24 | INCONSISTENT | `id_by_customer` is numeric in transaction-list rows but a string in the direct by-id response | Response envelope |
 
 ## Authentication
 
@@ -72,8 +73,12 @@ sections.
   `{ "success": bool, "message": string, "rows": int, "data": [...] }`. **[confirmed]**
 - `[FYI]` **`rows` is a COUNT, not the array.** The actual records are under
   **`data`**. Reading `.rows` expecting a list is a common first mistake. **[confirmed]**
-- `[FYI]` **All numeric values come back as strings:** `"amount": "1234.56"`,
+- `[FYI]` **Most numeric values come back as strings:** `"amount": "1234.56"`,
   `"vat": "19.00"`, account numbers `"3790"`. Parse accordingly. **[confirmed]**
+- `[INCONSISTENT]` **`id_by_customer` changes type between transaction
+  responses.** `/transactions/get` list rows return it as a JSON number, while
+  the direct `/transactions/get/<id>` response returns it as a string. Clients
+  should normalize IDs before comparison. **[verified 2026-09-03]**
 
 ## By-id routes (`*/get/<id>`, `*/delete/<id>`)
 
@@ -137,8 +142,22 @@ sections.
   - Consequence for tooling: an *unconfirmed* posting is invisible to the
     API; you cannot list or verify it. *butler: `bookings add` deliberately
     leaves new postings confirmed (see lifecycle below).*
-- `[GAP]` **You cannot delete a posting via the API.** Deletion is web-UI
-  only. **[verified 2026-06-04]**
+- `[FYI]` **`/postings/cancel` has state-dependent semantics.** The published
+  specification says it deletes an unfixed posting, but cancels a fixed posting
+  by creating a reversal. Clients must inspect `fixed` before calling it;
+  "cancel" is not always "delete". A live call for an unfixed posting returned
+  success and the row disappeared from both `/postings/get` and the web UI,
+  confirming deletion rather than unconfirmation. *butler: `bookings cancel
+  <id>` exposes the endpoint and documents the distinction.* **[verified
+  2026-09-03]**
+- `[FYI]` **Receipt and transaction postings have dedicated unconfirm
+  endpoints.** `/postings/unconfirm/receipt` removes all unfixed postings for
+  a receipt; `/postings/unconfirm/transaction` does the same for a bank
+  transaction. A linked transaction must be unconfirmed before replacing its
+  receipt booking. *butler: `receipts unconfirm` and `transactions unconfirm`.*
+  Live tests removed the target postings, returned the payment to the unbooked
+  list, and returned the receipt to unpaid/unbooked state. **[verified
+  2026-09-03]**
 - `[GAP]` **No confirm/lock (Festschreibung) endpoint exists.** Final
   confirming/locking is web-UI only. **[spec]**
 - `[GAP]` **Create endpoints return NO id.** `/postings/add/free` and

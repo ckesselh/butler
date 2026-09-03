@@ -1,8 +1,9 @@
 //! `bookings` resource (alias: `postings`): list, add (single line or
 //! --from-json split free booking, validated and canonicalized up front),
-//! unconfirm, and assign (link a receipt to a free booking). The BHB API has no
-//! delete endpoint — `delete` only explains the web-UI path. `add` is the FREE
-//! booking class (the UI "Erweitertes Buchen" / "Hinzufügen"); receipt- and
+//! unconfirm, cancel, and assign (link a receipt to a free booking). The BHB
+//! `/postings/cancel` endpoint deletes unfixed postings and reverses fixed
+//! postings. `add` is the FREE booking class (the UI "Erweitertes Buchen" /
+//! "Hinzufügen"); receipt- and
 //! transaction-anchored bookings live on `receipts book` / `transactions book`.
 
 const std = @import("std");
@@ -198,10 +199,10 @@ fn buildFreeBody(c: Client, line: FreeLine) ![]u8 {
     return o.toOwnedSlice();
 }
 
-const Verb = enum { list, add, unconfirm, delete, assign };
+const Verb = enum { list, add, unconfirm, cancel, delete, assign };
 
 pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
-    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|add|unconfirm|delete|assign");
+    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|add|unconfirm|cancel|delete|assign");
     switch (v) {
         .assign => {
             // Link a receipt to an existing free posting made before it arrived.
@@ -260,8 +261,23 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             defer r.deinit(c.gpa);
             return output.reportWrite(c.gpa, stderr, r, "unconfirm", c.api_key);
         },
+        .cancel => {
+            const idn = f.posInt(2) orelse return cli.missing(stderr, "<id>");
+            var o = try json.ObjBuilder.init(c.gpa);
+            try o.str("api_key", c.api_key);
+            try o.int("posting_id_by_customer", idn);
+            try o.end();
+            if (f.has("dry-run")) {
+                const shown = try json.redactAlloc(c.gpa, o.items(), c.api_key);
+                try stdout.print("DRY RUN — would POST to /postings/cancel:\n{s}\n\n(nothing was sent)\n", .{shown});
+                return 0;
+            }
+            var r = try c.post("/postings/cancel", o.items());
+            defer r.deinit(c.gpa);
+            return output.reportWrite(c.gpa, stderr, r, "cancel", c.api_key);
+        },
         .delete => {
-            try stderr.writeAll("bookings delete: not supported by the BHB API — delete in the web UI.\n");
+            try stderr.writeAll("bookings delete: use `bookings cancel <id>`; it deletes an unfixed posting but reverses a fixed posting.\n");
             return 2;
         },
     }

@@ -364,13 +364,28 @@ fn findReceiptCreditor(c: Client, rid: []const u8, rdate: []const u8, credit_not
     return null;
 }
 
-const Verb = enum { list, show, download, upload, delete, book, pay, comment };
+const Verb = enum { list, show, download, upload, delete, book, pay, unconfirm, comment };
 
 pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
-    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|download|upload|delete|book|pay|comment");
+    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|download|upload|delete|book|pay|unconfirm|comment");
     switch (v) {
         .book => return book(c, f, stdout, stderr),
         .pay => return pay(c, f, stdout, stderr),
+        .unconfirm => {
+            const ridn = f.posInt(2) orelse return cli.missing(stderr, "<receipt-id>");
+            var o = try json.ObjBuilder.init(c.gpa);
+            try o.str("api_key", c.api_key);
+            try o.int("receipt_id_by_customer", ridn);
+            try o.end();
+            if (f.has("dry-run")) {
+                const shown = try json.redactAlloc(c.gpa, o.items(), c.api_key);
+                try stdout.print("DRY RUN — would POST to /postings/unconfirm/receipt:\n{s}\n\n(nothing was sent)\n", .{shown});
+                return 0;
+            }
+            var r = try c.post("/postings/unconfirm/receipt", o.items());
+            defer r.deinit(c.gpa);
+            return output.reportWrite(c.gpa, stderr, r, "unconfirm receipt", c.api_key);
+        },
         .comment => return comments.run(c, .receipt, f, stdout, stderr),
         .download => return download(c, f, stderr),
         .list => {
