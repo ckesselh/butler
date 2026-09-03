@@ -33,13 +33,28 @@ fn listBody(c: Client, f: *const cli.Flags) ![]u8 {
     return o.toOwnedSlice();
 }
 
-const Verb = enum { list, show, book, settle, link, unlink, receipts, comment };
+const Verb = enum { list, show, book, settle, unconfirm, link, unlink, receipts, comment };
 
 pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
-    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|book|settle|link|unlink|receipts|comment");
+    const v = std.meta.stringToEnum(Verb, verb) orelse return cli.unknownVerb(stderr, verb, "list|show|book|settle|unconfirm|link|unlink|receipts|comment");
     switch (v) {
         .book => return book(c, f, stdout, stderr),
         .settle => return settle(c, f, stdout, stderr),
+        .unconfirm => {
+            const txn = f.posInt(2) orelse return cli.missing(stderr, "<transaction-id>");
+            var o = try json.ObjBuilder.init(c.gpa);
+            try o.str("api_key", c.api_key);
+            try o.int("transaction_id_by_customer", txn);
+            try o.end();
+            if (f.has("dry-run")) {
+                const shown = try json.redactAlloc(c.gpa, o.items(), c.api_key);
+                try stdout.print("DRY RUN — would POST to /postings/unconfirm/transaction:\n{s}\n\n(nothing was sent)\n", .{shown});
+                return 0;
+            }
+            var r = try c.post("/postings/unconfirm/transaction", o.items());
+            defer r.deinit(c.gpa);
+            return output.reportWrite(c.gpa, stderr, r, "unconfirm transaction", c.api_key);
+        },
         .comment => return comments.run(c, .transaction, f, stdout, stderr),
         .link => return assign(c, f, stderr, "/transactions/assign/receipt", "link"),
         .unlink => return assign(c, f, stderr, "/transactions/unassign/receipt", "unlink"),

@@ -14,6 +14,7 @@ butler <resource> <verb> [flags]
 - [**transactions**](#transactions)
   - [`list`](#list)
   - [`show`](#show)
+  - [`unconfirm`](#unconfirm)
   - [`book`](#book)
   - [`settle`](#settle)
   - [`link`](#link)
@@ -26,14 +27,16 @@ butler <resource> <verb> [flags]
   - [`download`](#download)
   - [`upload`](#upload)
   - [`delete`](#delete)
+  - [`unconfirm`](#unconfirm-1)
   - [`book`](#book-1)
   - [`pay`](#pay)
   - [`comment`](#comment-1)
 - [**bookings**](#bookings)
   - [`list`](#list-2)
   - [`add`](#add)
-  - [`unconfirm`](#unconfirm)
+  - [`unconfirm`](#unconfirm-2)
   - [`assign`](#assign)
+  - [`cancel`](#cancel)
   - [`delete`](#delete-1)
 - [**accounts**](#accounts)
   - [`list`](#list-3)
@@ -105,6 +108,9 @@ second /postings/get sweep over the window:
                      an unbooked payment has no receipt either.
 Because /postings/get caps at 1000 rows, keep the window bounded or items
 past the cap may show as falsely open.
+The filter applies only to the primary transaction page returned for the
+current --limit/--offset. Paginate or narrow the date window; omitted
+primary rows cannot appear in the filtered result.
 
 ### `show`
 
@@ -119,6 +125,26 @@ butler transactions show <id>
 - `id` — transaction id_by_customer
 
 Show a single transaction by its id_by_customer.
+
+### `unconfirm`
+
+remove all unfixed postings from a transaction
+
+```
+butler transactions unconfirm <tx> [--dry-run]
+```
+
+**Arguments:**
+
+- `tx` — transaction id_by_customer
+
+**Flags:**
+
+- `--dry-run` — print the redacted payload, send nothing
+
+Remove a transaction's postings through /postings/unconfirm/transaction.
+The endpoint rejects fixed postings. The transaction becomes unbooked;
+any receipt settled by those postings becomes unpaid again.
 
 ### `book`
 
@@ -309,6 +335,9 @@ Two distinct open-items filters, matching the "Eingangsbelege" screen:
 They are NOT the same: a receipt can be booked yet unpaid, or paid yet
 (rarely) unbooked. --unbooked caps at /postings/get's 1000 rows, so keep
 the window bounded.
+The filter applies only to the primary receipt page returned for the
+current --limit/--offset. Paginate or narrow the date window; omitted
+primary rows cannot appear in the filtered result.
 
 ### `show`
 
@@ -382,6 +411,26 @@ butler receipts delete <id>
 - `id` — receipt id_by_customer
 
 Delete a receipt by its id_by_customer.
+
+### `unconfirm`
+
+remove all unfixed postings from a receipt
+
+```
+butler receipts unconfirm <id> [--dry-run]
+```
+
+**Arguments:**
+
+- `id` — receipt id_by_customer
+
+**Flags:**
+
+- `--dry-run` — print the redacted payload, send nothing
+
+Remove a receipt's postings through /postings/unconfirm/receipt. The
+endpoint rejects fixed postings. Unconfirm a linked transaction first;
+otherwise BHB rejects a replacement receipt booking.
 
 ### `book`
 
@@ -514,7 +563,9 @@ Columns include a decoded `tax`: the posting's numeric tax_key mapped to
 BHB's documented vat-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The
 numeric key is undocumented, so the mapping is a best-effort, empirically
 derived bridge — the raw key stays in brackets and an unmapped key shows
-as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+as "[N] ?unmapped", so a wrong/missing label can never hide it. Some
+automatic accounts return tax_key 0 with a non-zero vat rate; for those
+rows the decoded label surfaces that rate instead of "keine Ust." Also
 `fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
 (assigned invoice number, or — if none) and `tx` (linked bank
 transaction id, or —). The debit/credit accounts resolve to "NNNN Name"
@@ -546,9 +597,14 @@ Use it for arbitrary debit/credit pairs or an independent posting date,
 including a receipt-backed journal entry that `receipts book` cannot
 express. Link an existing receipt afterwards with `bookings assign`.
 Normal creditor/debtor invoices should use `receipts book`; entries tied
-directly to bank payments should use `transactions book`. A free booking
-cannot be deleted via the API (web UI only), so do not use it to
-experiment.
+directly to bank payments should use `transactions book`. Do not use a
+free booking to experiment: `bookings cancel` deletes it only while it
+is unfixed; a fixed posting is reversed instead.
+A --from-json run sends one /postings/add/free request per line and is
+not atomic. --dry-run validates the whole file and --clearing assertion
+locally, but cannot test server-side account or VAT rules. If a later
+line fails, earlier lines remain: query them and retry only the missing
+lines; never rerun the complete input.
 New bookings are created CONFIRMED (visible to the API and the web UI,
 still unfixed so they stay editable/deletable in the UI). To stage one
 for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
@@ -590,9 +646,29 @@ changes no accounts, amounts, dates, or creditor/debtor. Because the free
 posting create endpoint returns no id, re-query `bookings list` and match
 the new posting by date, text, amount, and accounts before assigning it.
 
+### `cancel`
+
+delete an unfixed posting or reverse a fixed posting
+
+```
+butler bookings cancel <id> [--dry-run]
+```
+
+**Arguments:**
+
+- `id` — posting id_by_customer
+
+**Flags:**
+
+- `--dry-run` — print the redacted payload, send nothing
+
+Cancel a posting through /postings/cancel. BHB documents that an
+unfixed posting is deleted, while a fixed posting gets a reversal.
+Check the row's `fixed` value before running this command.
+
 ### `delete`
 
-not supported by the BHB API (explains the web-UI path)
+explain the cancel command
 
 ```
 butler bookings delete [id]
@@ -600,10 +676,10 @@ butler bookings delete [id]
 
 **Arguments:**
 
-- `id` — posting id (unused — deletion is web-UI only)
+- `id` — posting id (use bookings cancel)
 
-The BHB API has no posting-delete endpoint; this command only explains
-that deletion must happen in the web UI, and exits with a usage error.
+Use `bookings cancel <id>`. BHB documents that it deletes an unfixed
+posting but creates a reversal for a fixed posting.
 
 ---
 

@@ -100,12 +100,32 @@ Because /postings/get caps at 1000 rows, keep the window bounded or items
 .br
 past the cap may show as falsely open.
 .br
+The filter applies only to the primary transaction page returned for the
+.br
+current \-\-limit/\-\-offset. Paginate or narrow the date window; omitted
+.br
+primary rows cannot appear in the filtered result.
+.br
 .SS butler transactions show <id>
 .TP
 .B id
 transaction id_by_customer
 .PP
 Show a single transaction by its id_by_customer.
+.br
+.SS butler transactions unconfirm <tx> [\-\-dry\-run]
+.TP
+.B tx
+transaction id_by_customer
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Remove a transaction's postings through /postings/unconfirm/transaction.
+.br
+The endpoint rejects fixed postings. The transaction becomes unbooked;
+.br
+any receipt settled by those postings becomes unpaid again.
 .br
 .SS butler transactions book <tx> (\-\-account A \-\-amount N \-\-vat V \-\-text T [\-\-receipt R] | \-\-from\-json <file>)
 .TP
@@ -324,6 +344,12 @@ They are NOT the same: a receipt can be booked yet unpaid, or paid yet
 .br
 the window bounded.
 .br
+The filter applies only to the primary receipt page returned for the
+.br
+current \-\-limit/\-\-offset. Paginate or narrow the date window; omitted
+.br
+primary rows cannot appear in the filtered result.
+.br
 .SS butler receipts show <id>
 .TP
 .B id
@@ -383,6 +409,20 @@ print what would be sent, send nothing
 receipt id_by_customer
 .PP
 Delete a receipt by its id_by_customer.
+.br
+.SS butler receipts unconfirm <id> [\-\-dry\-run]
+.TP
+.B id
+receipt id_by_customer
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Remove a receipt's postings through /postings/unconfirm/receipt. The
+.br
+endpoint rejects fixed postings. Unconfirm a linked transaction first;
+.br
+otherwise BHB rejects a replacement receipt booking.
 .br
 .SS butler receipts book <id> (\-\-account A \-\-amount N \-\-vat V \-\-text T | \-\-from\-json <file>) [\-\-creditor C | \-\-debtor D]
 .TP
@@ -553,7 +593,11 @@ numeric key is undocumented, so the mapping is a best\-effort, empirically
 .br
 derived bridge — the raw key stays in brackets and an unmapped key shows
 .br
-as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+as "[N] ?unmapped", so a wrong/missing label can never hide it. Some
+.br
+automatic accounts return tax_key 0 with a non\-zero vat rate; for those
+.br
+rows the decoded label surfaces that rate instead of "keine Ust." Also
 .br
 `fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
 .br
@@ -607,11 +651,21 @@ express. Link an existing receipt afterwards with `bookings assign`.
 .br
 Normal creditor/debtor invoices should use `receipts book`; entries tied
 .br
-directly to bank payments should use `transactions book`. A free booking
+directly to bank payments should use `transactions book`. Do not use a
 .br
-cannot be deleted via the API (web UI only), so do not use it to
+free booking to experiment: `bookings cancel` deletes it only while it
 .br
-experiment.
+is unfixed; a fixed posting is reversed instead.
+.br
+A \-\-from\-json run sends one /postings/add/free request per line and is
+.br
+not atomic. \-\-dry\-run validates the whole file and \-\-clearing assertion
+.br
+locally, but cannot test server\-side account or VAT rules. If a later
+.br
+line fails, earlier lines remain: query them and retry only the missing
+.br
+lines; never rerun the complete input.
 .br
 New bookings are created CONFIRMED (visible to the API and the web UI,
 .br
@@ -651,14 +705,28 @@ posting create endpoint returns no id, re\-query `bookings list` and match
 .br
 the new posting by date, text, amount, and accounts before assigning it.
 .br
+.SS butler bookings cancel <id> [\-\-dry\-run]
+.TP
+.B id
+posting id_by_customer
+.TP
+.B \-\-dry\-run
+print the redacted payload, send nothing
+.PP
+Cancel a posting through /postings/cancel. BHB documents that an
+.br
+unfixed posting is deleted, while a fixed posting gets a reversal.
+.br
+Check the row's `fixed` value before running this command.
+.br
 .SS butler bookings delete [id]
 .TP
 .B id
-posting id (unused — deletion is web\-UI only)
+posting id (use bookings cancel)
 .PP
-The BHB API has no posting\-delete endpoint; this command only explains
+Use `bookings cancel <id>`. BHB documents that it deletes an unfixed
 .br
-that deletion must happen in the web UI, and exits with a usage error.
+posting but creates a reversal for a fixed posting.
 .br
 .SS butler accounts list [\-\-type kind] [flags]
 .TP

@@ -45,16 +45,18 @@ sections.
 | 10 | INCONSISTENT | `oi_receipts_ids_by_customer` required on `/postings/add/transaction` even with open-item postings disabled | Transaction-linked postings |
 | 11 | INCONSISTENT | `/receipts/add` requires `currency`, `/receipts/upload` does not | Receipts |
 | 12 | DOCS | `/receipts/get` requires `list_direction` but the spec gives no enum of valid values | Listing & filtering |
-| 13 | GAP | No way to delete a posting via the API (web UI only) | Postings |
+| 13 | FYI | `/postings/cancel` deletes unfixed postings but reverses fixed postings | Postings |
 | 14 | GAP | No confirm/lock (Festschreibung) endpoint | Postings |
 | 15 | GAP | Create endpoints return no id (postings, creditors, debtors); callers must re-query and match | Postings, Accounts & subledgers |
-| 16 | GAP | No update endpoint for receipts; metadata immutable via API | Receipts |
+| 16 | GAP | No update endpoint for receipt metadata or currency conversion, although the web UI supports edits | Receipts |
 | 17 | GAP | No get-by-id for postings (`/postings/get/<id>` does not exist) | By-id routes |
 | 18 | GAP | `/settings` resources: no search/filter, no get-one, no delete | Accounts & subledgers |
 | 19 | INCONSISTENT | By-id miss behaviour differs: receipts answer 200 with an empty array (and switch `data`'s shape), transactions answer HTTP 400 | By-id routes |
 | 20 | GAP | Comments: no get/update/delete endpoint; readable only as a field on `/postings/get` rows | Comments |
 | 21 | DOCS | `/comments/add` unknown-id errors are 9/10 ("… was not found"), not the documented 5/6 | Comments |
 | 22 | GAP | The web UI's "beleglos" (no receipt required) flag on a payment is neither readable nor settable via the API; "Fehlender Beleg" cannot be reproduced exactly | Transaction-linked postings |
+| 23 | BUG | Creditor `additional_address_line` writes return success but remain `null` on API readback | Accounts & subledgers |
+| 24 | INCONSISTENT | `id_by_customer` is numeric in transaction-list rows but a string in the direct by-id response | Response envelope |
 
 ## Authentication
 
@@ -71,8 +73,12 @@ sections.
   `{ "success": bool, "message": string, "rows": int, "data": [...] }`. **[confirmed]**
 - `[FYI]` **`rows` is a COUNT, not the array.** The actual records are under
   **`data`**. Reading `.rows` expecting a list is a common first mistake. **[confirmed]**
-- `[FYI]` **All numeric values come back as strings:** `"amount": "1234.56"`,
+- `[FYI]` **Most numeric values come back as strings:** `"amount": "1234.56"`,
   `"vat": "19.00"`, account numbers `"3790"`. Parse accordingly. **[confirmed]**
+- `[INCONSISTENT]` **`id_by_customer` changes type between transaction
+  responses.** `/transactions/get` list rows return it as a JSON number, while
+  the direct `/transactions/get/<id>` response returns it as a string. Clients
+  should normalize IDs before comparison. **[verified 2026-09-03]**
 
 ## By-id routes (`*/get/<id>`, `*/delete/<id>`)
 
@@ -136,8 +142,22 @@ sections.
   - Consequence for tooling: an *unconfirmed* posting is invisible to the
     API; you cannot list or verify it. *butler: `bookings add` deliberately
     leaves new postings confirmed (see lifecycle below).*
-- `[GAP]` **You cannot delete a posting via the API.** Deletion is web-UI
-  only. **[verified 2026-06-04]**
+- `[FYI]` **`/postings/cancel` has state-dependent semantics.** The published
+  specification says it deletes an unfixed posting, but cancels a fixed posting
+  by creating a reversal. Clients must inspect `fixed` before calling it;
+  "cancel" is not always "delete". A live call for an unfixed posting returned
+  success and the row disappeared from both `/postings/get` and the web UI,
+  confirming deletion rather than unconfirmation. *butler: `bookings cancel
+  <id>` exposes the endpoint and documents the distinction.* **[verified
+  2026-09-03]**
+- `[FYI]` **Receipt and transaction postings have dedicated unconfirm
+  endpoints.** `/postings/unconfirm/receipt` removes all unfixed postings for
+  a receipt; `/postings/unconfirm/transaction` does the same for a bank
+  transaction. A linked transaction must be unconfirmed before replacing its
+  receipt booking. *butler: `receipts unconfirm` and `transactions unconfirm`.*
+  Live tests removed the target postings, returned the payment to the unbooked
+  list, and returned the receipt to unpaid/unbooked state. **[verified
+  2026-09-03]**
 - `[GAP]` **No confirm/lock (Festschreibung) endpoint exists.** Final
   confirming/locking is web-UI only. **[spec]**
 - `[GAP]` **Create endpoints return NO id.** `/postings/add/free` and
@@ -176,12 +196,25 @@ sections.
   charge), `0 → "keine Ust."`; see `src/spec.zig` `tax_keys`. The
   numeric→symbolic bridge is empirically derived, so the raw key is always
   shown next to the label and an unknown key renders as unmapped.*
+- `[FYI]` **A `tax_key` of `"0"` does not always mean that the posting has no
+  VAT.** Some automatic accounts carry their tax treatment on the account. In
+  that case `/postings/get` can return `tax_key: "0"` together with a non-zero
+  `vat`, for example `"19.00"`. Read `tax_key`, `vat`, and the posting accounts
+  together. *butler: the derived `tax_label` reports the non-zero rate instead
+  of displaying the misleading `keine Ust.` label.* **[verified 2026-09-03]**
 - `[DOCS]` **`amount` type is inconsistent between endpoints.**
   `/postings/add/free` documents `amount` as a **string**; the batch
   endpoint's `PostingsFree` schema documents it as a **number** (and its
   `required` list has a typo, `"amounts"` plural). **[spec]** *butler: posts
   via repeated `/postings/add/free` with a string `amount` to stay on the
   well-defined path.*
+- `[FYI]` **A multi-line free posting is not atomic when a client repeats
+  `/postings/add/free`.** Each successful request creates one confirmed
+  posting. If a later request fails, the earlier postings remain and retrying
+  the complete input duplicates them. *butler: validates all lines and any
+  clearing-account assertion locally before sending, but `--dry-run` cannot
+  validate server-side account or VAT rules. On a partial failure, query the
+  created postings and retry only the missing lines.* **[confirmed]**
 - `[FYI]` **`vat` is a symbolic token, not a number.** Valid values include
   `0_none`, `19_vat`, `7_vat`, `19_pre`, `7_pre`, `19_both_1`, `19_both_2`,
   `7_both`, `19_both_1_no_pre`, `19_both_2_no_pre`, `7_both_no_pre`,
@@ -255,17 +288,42 @@ sections.
   (`{"date":"ASC"}`). **[spec]**
 - `[FYI]` List endpoints cap at high limits (postings `limit` max 1000;
   transactions / receipts max 500). **[spec]**
+- `[FYI]` *butler:* `--unbooked` and `--missing-receipt` are client-side
+  anti-joins over the primary list page and a postings sweep. They cannot find
+  primary rows omitted by `--limit`/`--offset`, and a truncated postings sweep
+  can create false positives. Paginate the primary list or use a narrow date
+  window, then verify each hit against postings. This is a CLI workflow limit,
+  not a BHB API defect.
 
 ## Receipts (`/receipts/*`)
 
-- `[GAP]` **No update endpoint; receipt metadata is immutable via the API.**
-  The only receipt verbs are `add`/`addBatch`/`upload`, `get`, `delete` and
-  `restore`; there is no `/receipts/update` (the API's only update routes are
-  `/settings/update/{postingaccount,creditor,debtor}` and
-  `/cost-locations/update`). A receipt captured with wrong metadata, e.g. a
-  credit note stored as a regular invoice with a positive amount, cannot be
-  corrected in place: fix it in the web UI, or `delete` and re-upload it
-  (deletes are soft; a restore route exists, see "By-id routes"). **[spec]**
+- `[GAP]` **No update endpoint; receipt metadata and currency conversion are
+  immutable via the API.** The web UI can edit an existing receipt's
+  counterparty, invoice number, dates, amount, original currency, exchange
+  rate, and converted EUR amount. The published API exposes no equivalent
+  operation. Its only receipt verbs are `add`/`addBatch`/`upload`, `get`,
+  `delete`, and `restore`; there is no `/receipts/update`. Read responses expose
+  `amount_original`, `currency_original`, `exchangerate`, and the converted
+  `amount`, but no endpoint accepts those fields to update an existing receipt.
+  `/receipts/upload` accepts document bytes but restricts `currency` to EUR;
+  `/receipts/add` accepts selected foreign currencies but accepts no document
+  file. **[spec, verified 2026-09-03]**
+
+  The available workarounds are not equivalent: editing in the web UI breaks
+  API-only automation, while soft-deleting and recreating the receipt changes
+  its ID and can disrupt comments, posting links, or payment assignments.
+
+  Questions for BHB support:
+
+  1. Does the web UI use an undocumented receipt-update endpoint that API
+     clients may also use?
+  2. Can the public API expose updates for receipt metadata, especially the
+     original amount/currency, exchange rate, and converted EUR amount?
+  3. Can such an update preserve the receipt ID, file, comments, posting links,
+     and payment assignments?
+  4. If updates are intentionally unsupported, can `/receipts/upload` accept
+     an original foreign-currency amount plus either an exchange rate or the
+     authoritative converted EUR amount?
 - `[FYI]` **Upload field names:** the file goes in `file` as **base64**, and
   `file_name` is **required** alongside it (because `file` is base64). It is
   *not* `filename`, `file_content`, or `base64`. **[spec]**
@@ -359,6 +417,17 @@ sections.
   `postingaccount_number` to have BHB assign the next free one; re-query the
   list to learn it. `add/postingaccount` requires the number plus a
   `parent_postingaccount_number`. **[spec]**
+- `[BUG]` **Creditor `additional_address_line` writes are not observable on
+  readback.** Both `/settings/add/creditor` and
+  `/settings/update/creditor` document and accept `additional_address_line`.
+  A create followed by an update returned success, but a later
+  `/settings/get/creditors` response still reported the corresponding
+  `additional_addressline` field as `null`. It is unclear whether the write is
+  discarded or the get endpoint omits the stored value. **[verified
+  2026-09-03]**
+
+  Question for BHB support: Is the additional address line persisted but not
+  returned, or are successful writes currently ignored?
 
 ## Comments (`/comments/add`)
 

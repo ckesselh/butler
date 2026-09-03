@@ -190,6 +190,9 @@ const transactions_verbs = [_]Verb{
         \\                     an unbooked payment has no receipt either.
         \\Because /postings/get caps at 1000 rows, keep the window bounded or items
         \\past the cap may show as falsely open.
+        \\The filter applies only to the primary transaction page returned for the
+        \\current --limit/--offset. Paginate or narrow the date window; omitted
+        \\primary rows cannot appear in the filtered result.
         ,
     },
     .{
@@ -198,6 +201,18 @@ const transactions_verbs = [_]Verb{
         .usage = "butler transactions show <id>",
         .positionals = &.{.{ .name = "id", .help = "transaction id_by_customer", .int = true }},
         .notes = "Show a single transaction by its id_by_customer.",
+    },
+    .{
+        .name = "unconfirm",
+        .summary = "remove all unfixed postings from a transaction",
+        .usage = "butler transactions unconfirm <tx> [--dry-run]",
+        .positionals = &.{.{ .name = "tx", .help = "transaction id_by_customer", .int = true }},
+        .flags = &.{.{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" }},
+        .notes =
+        \\Remove a transaction's postings through /postings/unconfirm/transaction.
+        \\The endpoint rejects fixed postings. The transaction becomes unbooked;
+        \\any receipt settled by those postings becomes unpaid again.
+        ,
     },
     .{
         .name = "book",
@@ -320,6 +335,9 @@ const receipts_verbs = [_]Verb{
         \\They are NOT the same: a receipt can be booked yet unpaid, or paid yet
         \\(rarely) unbooked. --unbooked caps at /postings/get's 1000 rows, so keep
         \\the window bounded.
+        \\The filter applies only to the primary receipt page returned for the
+        \\current --limit/--offset. Paginate or narrow the date window; omitted
+        \\primary rows cannot appear in the filtered result.
         ,
     },
     .{
@@ -369,6 +387,18 @@ const receipts_verbs = [_]Verb{
         .usage = "butler receipts delete <id>",
         .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
         .notes = "Delete a receipt by its id_by_customer.",
+    },
+    .{
+        .name = "unconfirm",
+        .summary = "remove all unfixed postings from a receipt",
+        .usage = "butler receipts unconfirm <id> [--dry-run]",
+        .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
+        .flags = &.{.{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" }},
+        .notes =
+        \\Remove a receipt's postings through /postings/unconfirm/receipt. The
+        \\endpoint rejects fixed postings. Unconfirm a linked transaction first;
+        \\otherwise BHB rejects a replacement receipt booking.
+        ,
     },
     .{
         .name = "book",
@@ -461,7 +491,9 @@ const bookings_verbs = [_]Verb{
         \\BHB's documented vat-code label (e.g. "i.g.E. 19% USt./VSt. [19]"). The
         \\numeric key is undocumented, so the mapping is a best-effort, empirically
         \\derived bridge — the raw key stays in brackets and an unmapped key shows
-        \\as "[N] ?unmapped", so a wrong/missing label can never hide it. Also
+        \\as "[N] ?unmapped", so a wrong/missing label can never hide it. Some
+        \\automatic accounts return tax_key 0 with a non-zero vat rate; for those
+        \\rows the decoded label surfaces that rate instead of "keine Ust." Also
         \\`fixed` (yes = festgeschrieben/locked, no = still editable), `receipt`
         \\(assigned invoice number, or — if none) and `tx` (linked bank
         \\transaction id, or —). The debit/credit accounts resolve to "NNNN Name"
@@ -490,9 +522,14 @@ const bookings_verbs = [_]Verb{
         \\including a receipt-backed journal entry that `receipts book` cannot
         \\express. Link an existing receipt afterwards with `bookings assign`.
         \\Normal creditor/debtor invoices should use `receipts book`; entries tied
-        \\directly to bank payments should use `transactions book`. A free booking
-        \\cannot be deleted via the API (web UI only), so do not use it to
-        \\experiment.
+        \\directly to bank payments should use `transactions book`. Do not use a
+        \\free booking to experiment: `bookings cancel` deletes it only while it
+        \\is unfixed; a fixed posting is reversed instead.
+        \\A --from-json run sends one /postings/add/free request per line and is
+        \\not atomic. --dry-run validates the whole file and --clearing assertion
+        \\locally, but cannot test server-side account or VAT rules. If a later
+        \\line fails, earlier lines remain: query them and retry only the missing
+        \\lines; never rerun the complete input.
         \\New bookings are created CONFIRMED (visible to the API and the web UI,
         \\still unfixed so they stay editable/deletable in the UI). To stage one
         \\for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
@@ -523,11 +560,23 @@ const bookings_verbs = [_]Verb{
         ,
     },
     .{
+        .name = "cancel",
+        .summary = "delete an unfixed posting or reverse a fixed posting",
+        .usage = "butler bookings cancel <id> [--dry-run]",
+        .positionals = &.{.{ .name = "id", .help = "posting id_by_customer", .int = true }},
+        .flags = &.{.{ .name = "dry-run", .kind = .boolean, .help = "print the redacted payload, send nothing" }},
+        .notes =
+        \\Cancel a posting through /postings/cancel. BHB documents that an
+        \\unfixed posting is deleted, while a fixed posting gets a reversal.
+        \\Check the row's `fixed` value before running this command.
+        ,
+    },
+    .{
         .name = "delete",
-        .summary = "not supported by the BHB API (explains the web-UI path)",
+        .summary = "explain the cancel command",
         .usage = "butler bookings delete [id]",
-        .positionals = &.{.{ .name = "id", .help = "posting id (unused — deletion is web-UI only)" }},
-        .notes = "The BHB API has no posting-delete endpoint; this command only explains\nthat deletion must happen in the web UI, and exits with a usage error.",
+        .positionals = &.{.{ .name = "id", .help = "posting id (use bookings cancel)" }},
+        .notes = "Use `bookings cancel <id>`. BHB documents that it deletes an unfixed\nposting but creates a reversal for a fixed posting.",
     },
 };
 
