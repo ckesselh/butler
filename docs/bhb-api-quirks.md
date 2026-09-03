@@ -54,6 +54,7 @@ sections.
 | 19 | INCONSISTENT | By-id miss behaviour differs: receipts answer 200 with an empty array (and switch `data`'s shape), transactions answer HTTP 400 | By-id routes |
 | 20 | GAP | Comments: no get/update/delete endpoint; readable only as a field on `/postings/get` rows | Comments |
 | 21 | DOCS | `/comments/add` unknown-id errors are 9/10 ("… was not found"), not the documented 5/6 | Comments |
+| 22 | GAP | The web UI's "beleglos" (no receipt required) flag on a payment is neither readable nor settable via the API; "Fehlender Beleg" cannot be reproduced exactly | Transaction-linked postings |
 
 ## Authentication
 
@@ -279,6 +280,32 @@ sections.
 - `[INCONSISTENT]` **`oi_receipts_ids_by_customer` is REQUIRED even with
   open-item postings off.** Send one `null` per line (an array sized to the
   lines). **[spec]** *butler: does this automatically.*
+
+- `[GAP]` **The web UI's "beleglos" flag (payment needs no receipt) is
+  invisible to the API.** In the web app a booked payment without a receipt
+  shows under the filter "Fehlender Beleg" until it is marked "beleglos"; that
+  mark is a web-UI-only state. No endpoint sets or clears it, and no read
+  surface exposes it: the full `/transactions/get` list row (`id_by_customer`,
+  `to_from`, `amount`, `booking_date`, `value_date`, `purpose`), the full
+  `/transactions/get/<id>` record (adds `account`, `currency`,
+  `account_number`, `bank_code`, `bank_name`, `type`, `booking_text`), the
+  38-field `/postings/get` row and `/transactions/assigned-receipts/get` are
+  field-for-field identical for a receipt-less payment whether or not it was
+  marked in the UI; a posting with a settled receipt differs only in the
+  populated `receipts_assigned_*` / `receipts_links` columns. The spec has no
+  matching property or parameter either (searched for beleglos, no_receipt,
+  receipt_required, without_receipt, missing). The mark sits on the payment,
+  not on its posting: it can be set on a booked payment, even one whose posting
+  is already fixed (festgeschrieben), and the posting survives untouched;
+  unbooking first is not needed. **[verified 2026-08-22]**
+  - Consequence: the UI filter "Fehlender Beleg" cannot be reproduced exactly
+    over the API, and a state reachable in the UI is unreachable by API
+    clients. Do not unbook a payment to flag it: unbooking drops its account
+    and posting text, and the flag does not need it.
+  - *butler: `transactions list --missing-receipt` computes the anti-join
+    (booked payment, no receipt on any posting) and therefore keeps listing
+    payments the UI has marked "beleglos"; a local ignore list (e.g. by contra
+    account) would be the only way to mimic the flag.*
 
 ## Accounts & subledgers (`/settings/*`)
 
