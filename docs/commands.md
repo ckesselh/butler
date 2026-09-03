@@ -407,10 +407,17 @@ butler receipts book <id> (--account A --amount N --vat V --text T | --from-json
 - `--dry-run` — print the redacted payload, send nothing
 
 Books a receipt (/postings/add/receipt): the account line(s) for the
-expense/revenue. The counterparty Sammelkonto defaults to the standard
-Kreditoren-Sammelkonto (70000); pass --creditor for a dedicated creditor,
-or --debtor for an outbound invoice (Debitoren-Sammelkonto 10000). Then
-settle it against the payment with `receipts pay <id> --with <tx>`.
+expense/revenue. The endpoint creates receipt-linked postings with a
+creditor/debtor counteraccount; it has no parameter for an independent
+posting date and cannot express arbitrary debit/credit pairs. The
+counterparty Sammelkonto defaults to the standard Kreditoren-Sammelkonto
+(70000); pass --creditor for a dedicated creditor, or --debtor for an
+outbound invoice (Debitoren-Sammelkonto 10000). Then settle it against
+the payment with `receipts pay <id> --with <tx>`.
+
+If a receipt needs an independent posting date or arbitrary accounts,
+create the posting with `bookings add`, then link the existing receipt
+and posting with `bookings assign`.
 
 ### `pay`
 
@@ -534,14 +541,14 @@ butler bookings add (--from-json <file> | <line flags>) [flags]
 - `--clearing <acct>` — assert this account nets to zero before sending
 - `--dry-run` — print the redacted payload, send nothing
 
-Most bookings should NOT use this command. An expense or income tied to
-an invoice is booked with `receipts book`, and one tied to a bank payment
-with `transactions book`, so the posting stays ANCHORED to its receipt or
-transaction and is re-booked / settled / decoded through it. Reach for
-`bookings add` ONLY for a free, standalone entry ("Erweitertes Buchen")
-that has neither a receipt nor a payment — e.g. accruals,
-reclassifications, or opening balances. A free booking cannot be deleted
-via the API (web UI only), so do not use it to experiment.
+Creates free postings independently of receipts and bank transactions.
+Use it for arbitrary debit/credit pairs or an independent posting date,
+including a receipt-backed journal entry that `receipts book` cannot
+express. Link an existing receipt afterwards with `bookings assign`.
+Normal creditor/debtor invoices should use `receipts book`; entries tied
+directly to bank payments should use `transactions book`. A free booking
+cannot be deleted via the API (web UI only), so do not use it to
+experiment.
 New bookings are created CONFIRMED (visible to the API and the web UI,
 still unfixed so they stay editable/deletable in the UI). To stage one
 for UI-only review, unconfirm it afterwards: butler bookings unconfirm <id>.
@@ -577,9 +584,11 @@ butler bookings assign <receipt-id> <posting-id>
 - `receipt-id` — receipt id_by_customer
 - `posting-id` — posting id_by_customer
 
-Assign a receipt to an existing free booking
-(/postings/assign/receipt-to-free-posting) — e.g. a booking made before its
-receipt arrived.
+Links an existing receipt to an existing free posting
+(/postings/assign/receipt-to-free-posting). It creates no posting and
+changes no accounts, amounts, dates, or creditor/debtor. Because the free
+posting create endpoint returns no id, re-query `bookings list` and match
+the new posting by date, text, amount, and accounts before assigning it.
 
 ### `delete`
 

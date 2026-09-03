@@ -168,7 +168,22 @@ $ butler creditors show 70037
 
 ### Writing
 
-A single free booking (a manual entry not anchored to a receipt or payment):
+Choose the command sequence by the accounting operation:
+
+| Need | Command sequence |
+|---|---|
+| Normal creditor/debtor invoice | `receipts upload` → `receipts book` → `receipts pay` |
+| Receipt with arbitrary debit/credit accounts or an independent posting date | `receipts upload` → `bookings add` → `bookings assign` |
+| Bank transaction without a receipt | `transactions book` |
+| Settle an existing open item | `receipts pay` or `transactions settle` |
+
+Receipts and postings are separate entities. `receipts upload` creates the
+receipt, `bookings add` creates one or more free postings, and `bookings assign`
+links an existing receipt to an existing posting. Assignment creates no posting
+and changes no accounts, amounts, dates, or creditor/debtor.
+
+A single free booking (a manual entry created independently of a receipt or
+payment):
 
 ```console
 $ butler bookings add \
@@ -212,6 +227,34 @@ $ butler receipts upload invoice.pdf --type "invoice inbound" \
 $ butler receipts upload credit-note.pdf --type "invoice inbound" --credit-note \
     --counterparty "ACME GmbH" --invoice-number INV-124 --date 2026-05-31 --amount 42.00
 ```
+
+Create a receipt-backed posting with a posting date independent of the document
+date:
+
+```console
+# 1. Upload the evidence with its document date; note the receipt id
+$ butler receipts upload invoice.pdf --type "invoice inbound" \
+    --counterparty "ACME GmbH" --invoice-number INV-125 \
+    --date 2026-06-05 --amount 2500.00
+
+# 2. Preview, then create the free posting with its own posting date
+$ butler bookings add --date 2026-05-31 --debit 4900 --credit 1590 \
+    --amount 2500.00 --vat 0_none --text "Contract accrual INV-125" --dry-run
+$ butler bookings add --date 2026-05-31 --debit 4900 --credit 1590 \
+    --amount 2500.00 --vat 0_none --text "Contract accrual INV-125"
+
+# 3. The create endpoint returns no id; re-query and identify the posting
+$ butler bookings list --date-from 2026-05-31 --date-to 2026-05-31 \
+    --filter "Contract accrual INV-125"
+
+# 4. Link the two existing entities, then verify the result
+$ butler bookings assign <receipt-id> <posting-id>
+$ butler receipts show <receipt-id>
+```
+
+For a normal invoice, use `receipts book` instead. Its API endpoint accepts a
+creditor/debtor counteraccount but no independent posting date or arbitrary
+debit/credit pair.
 
 ## Output & exit codes
 
