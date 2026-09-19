@@ -175,6 +175,21 @@ fn fetchAccountNames(c: Client, stderr: *std.Io.Writer) !?*AccountNames {
     return map;
 }
 
+/// Render posting rows that were fetched elsewhere as the `bookings list`
+/// table, with the same decoding (tax label, lock state, receipt/tx links,
+/// account names). One account-name lookup, like `list`.
+pub fn renderPostings(c: Client, stdout: *std.Io.Writer, stderr: *std.Io.Writer, rows: []const std.json.Value) !u8 {
+    var data = std.json.Array.init(c.gpa);
+    for (rows) |row| try data.append(row);
+    var envelope: std.json.ObjectMap = .empty;
+    try envelope.put(c.gpa, "success", .{ .bool = true });
+    try envelope.put(c.gpa, "rows", .{ .integer = @intCast(rows.len) });
+    try envelope.put(c.gpa, "data", .{ .array = data });
+    const body = try std.json.Stringify.valueAlloc(c.gpa, std.json.Value{ .object = envelope }, .{});
+    var decor = ListDecor{ .accounts = try fetchAccountNames(c, stderr) };
+    return output.emitListDecorated(c.gpa, stdout, stderr, .{ .status = 200, .body = body }, &cols, .table, null, c.api_key, decor.make());
+}
+
 const FreeLine = struct {
     date: []const u8,
     postingtext: []const u8,
@@ -451,6 +466,7 @@ fn validateLines(gpa: std.mem.Allocator, lines: []FreeLine, stderr: *std.Io.Writ
         }
         l.amount = (try postingline.canonicalizeAmountVat(gpa, l.amount, l.vat, i, " (direction comes from debit/credit)", stderr)) orelse
             return 1;
+        if (!try postingline.checkPostingText(l.postingtext, i, stderr)) return 1;
     }
     return null;
 }
@@ -489,4 +505,8 @@ test "validateLines rejects bad vat, equal accounts, nonpositive amounts" {
     var garbage = [_]FreeLine{base};
     garbage[0].amount = "12,50";
     try std.testing.expectEqual(@as(?u8, 1), try validateLines(gpa, &garbage, &sink.writer));
+
+    var long_text = [_]FreeLine{base};
+    long_text[0].postingtext = "x" ** (postingline.max_postingtext_chars + 1);
+    try std.testing.expectEqual(@as(?u8, 1), try validateLines(gpa, &long_text, &sink.writer));
 }

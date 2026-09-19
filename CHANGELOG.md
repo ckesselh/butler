@@ -4,6 +4,35 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+This release makes a booking session shorter: the ids you need are on screen,
+a receipt tells you how it is booked, and two classes of false "unbooked"
+receipts stop showing up.
+
+### Added
+
+- `transactions list` shows `id_by_customer` as the first column. Every write
+  verb is addressed by that id, and until now only `--output json` revealed it.
+- `receipts upload` prints the new receipt's `id_by_customer` on success (json:
+  the created receipt), so `receipts book <id>` can follow without a listing.
+- `receipts show <id> --postings` appends the postings that reference the
+  receipt, rendered like `bookings list` (json: `{"receipt": …, "postings": […]}`).
+  It answers "is this already booked, and how?" without grepping a listing.
+- `receipts list --unbooked` shows a `payment_date` column. A receipt with a
+  payment date but no posting already hangs on a payment: a companion document
+  beside the booked one, or a soft link. `--unlinked` drops those rows.
+- `receipts list --unbooked --sweep-margin <days>` starts the posting sweep
+  before `--date-from` (default 45 days), so a receipt posted before its
+  document date, such as a payslip posted at the previous month end, no longer
+  reads as unbooked.
+
+### Changed
+
+- A posting text longer than 128 characters is rejected before anything is
+  sent, on every posting verb. The API refuses it anyway (error 31) and posts
+  nothing, but now the message names the line and its length.
+
 ## [0.7.0] - 2026-09-03
 
 This release lets you correct a receipt or payment that was booked incorrectly,
