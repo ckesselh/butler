@@ -13,7 +13,9 @@ const postingline = @import("postingline.zig");
 const receipts = @import("receipts.zig");
 const Client = @import("../client.zig").Client;
 
-const cols = [_][]const u8{ "booking_date", "value_date", "amount", "to_from", "purpose" };
+// `id_by_customer` leads because every write verb (`book`, `settle`, `unconfirm`,
+// `receipts pay --with`) is addressed by it.
+const cols = [_][]const u8{ "id_by_customer", "booking_date", "value_date", "amount", "to_from", "purpose" };
 
 // Columns for the receipts assigned to a transaction (`transactions receipts`).
 const receipt_cols = [_][]const u8{ "id_by_customer", "invoicenumber", "amount", "filename" };
@@ -76,7 +78,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
                 // For --missing-receipt, only postings that carry a receipt count
                 // as "has a receipt"; the anti-join then returns those without one.
                 const require_field: ?[]const u8 = if (f.has("missing-receipt")) "receipts_assigned_ids_by_customer" else null;
-                return openitems.emit(c, stdout, stderr, r, &cols, out_mode, f.opt("filter"), from, to, "transaction_id_by_customer", false, require_field);
+                return openitems.emit(c, stdout, stderr, r, &cols, out_mode, f.opt("filter"), from, to, "transaction_id_by_customer", false, require_field, null);
             }
             var r = try c.post("/transactions/get", try listBody(c, f));
             defer r.deinit(c.gpa);

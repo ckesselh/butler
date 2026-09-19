@@ -76,10 +76,15 @@ fn referencedIds(c: Client, stderr: *std.Io.Writer, from: []const u8, to: []cons
 }
 
 /// Render the rows of `primary` whose `id_by_customer` is NOT referenced by any
-/// posting's `posting_field` over [from, to]. A failed/empty primary response is
-/// passed through to the normal list path so its error/edge handling is reused.
-/// Note: `/postings/get` caps at 1000 rows, so a window wider than that many
-/// postings can mis-report items as open — keep the window bounded.
+/// posting's `posting_field` over [from, to], the sweep window, which a caller
+/// may start earlier than the primary window when postings tend to predate
+/// their documents. `drop_nonempty` names a primary field whose non-empty rows
+/// are left out on top of the anti-join (a receipt that already hangs on a
+/// payment is not open, even when no posting names it). A failed/empty primary
+/// response is passed through to the normal list path so its error/edge
+/// handling is reused. Note: `/postings/get` caps at 1000 rows, so a window
+/// wider than that many postings can mis-report items as open — keep the
+/// window bounded.
 pub fn emit(
     c: Client,
     stdout: *std.Io.Writer,
@@ -93,6 +98,7 @@ pub fn emit(
     posting_field: []const u8,
     multi: bool,
     require_field: ?[]const u8,
+    drop_nonempty: ?[]const u8,
 ) !u8 {
     const gpa = c.gpa;
 
@@ -112,6 +118,10 @@ pub fn emit(
             .object => |x| x,
             else => continue,
         };
+        if (drop_nonempty) |field| {
+            const value: []const u8 = json.getStr(ro, field) orelse "";
+            if (value.len != 0) continue;
+        }
         // id_by_customer is a number on transactions, a string on receipts;
         // compare via the rendered decimal form either way.
         const idv = ro.get("id_by_customer") orelse {

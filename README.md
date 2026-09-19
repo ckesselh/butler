@@ -40,7 +40,8 @@ a consistent, scriptable interface with `--output json` for piping into `jq`.
 - Resources: **transactions**, **receipts**, **bookings** (alias `postings`),
   **accounts**, **creditors**, **debtors**.
 - Read: `list` (with filters + open-item filters like `--unbooked` / `--unpaid`),
-  `--filter` substring search, `show <id>`.
+  `--filter` substring search, `show <id>` (`receipts show --postings` lists a
+  receipt's postings).
 - Write: book a receipt (`receipts book`), a payment (`transactions book`) or a
   free/split entry (`bookings add`); settle receipts against payments
   (`receipts pay` / `transactions settle`); remove unfixed receipt/transaction

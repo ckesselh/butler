@@ -322,6 +322,8 @@ const receipts_verbs = [_]Verb{
             .{ .name = "deleted", .kind = .boolean, .help = "include deleted receipts" },
             .{ .name = "unbooked", .kind = .boolean, .help = "only receipts with no posting referencing them — UI \"Ungebucht\" (needs the date window)" },
             .{ .name = "unpaid", .kind = .boolean, .help = "only unpaid receipts — UI \"Unbezahlt\" (shorthand for --payment-status unpaid)" },
+            .{ .name = "unlinked", .kind = .boolean, .help = "with --unbooked: also drop receipts already linked to a payment (payment_date set)" },
+            .{ .name = "sweep-margin", .arg = "days", .int = true, .min = 0, .help = "with --unbooked: start the posting sweep this many days before --date-from (default 45)" },
             filter_flag,
             limit_flag,
             offset_flag,
@@ -335,6 +337,16 @@ const receipts_verbs = [_]Verb{
         \\They are NOT the same: a receipt can be booked yet unpaid, or paid yet
         \\(rarely) unbooked. --unbooked caps at /postings/get's 1000 rows, so keep
         \\the window bounded.
+        \\The sweep starts --sweep-margin days (default 45) before --date-from,
+        \\because a receipt is often posted before its document date: a payslip
+        \\dated in the payout month is posted at the previous month end. A
+        \\posting further back still reads as falsely open; widen the margin or
+        \\check the hit with `receipts show <id> --postings`.
+        \\The --unbooked table adds a payment_date column. A receipt with a
+        \\payment date but no posting already hangs on a payment: a companion
+        \\document (the delivery note beside the invoice, the card slip beside
+        \\the bill) whose expense is posted against another receipt, or a soft
+        \\link from `transactions link`. Book neither; --unlinked drops them.
         \\The filter applies only to the primary receipt page returned for the
         \\current --limit/--offset. Paginate or narrow the date window; omitted
         \\primary rows cannot appear in the filtered result.
@@ -343,11 +355,19 @@ const receipts_verbs = [_]Verb{
     .{
         .name = "show",
         .summary = "a single receipt",
-        .usage = "butler receipts show <id>",
+        .usage = "butler receipts show <id> [--postings]",
         .positionals = &.{.{ .name = "id", .help = "receipt id_by_customer", .int = true }},
+        .flags = &.{
+            .{ .name = "postings", .kind = .boolean, .help = "also list the postings that reference the receipt (one /postings/get sweep over its calendar year)" },
+        },
         .notes =
         \\Show a single receipt by its id_by_customer, fetched directly.
         \\Deleted receipts are shown too (deleted: 1).
+        \\--postings appends the postings that reference the receipt, rendered
+        \\like `bookings list` (json: {"receipt": …, "postings": […]} with the
+        \\raw posting rows). They come from one sweep over the receipt's calendar
+        \\year, since the API cannot filter postings by receipt; an empty list
+        \\means unbooked, or posted in another year.
         ,
     },
     .{
@@ -380,6 +400,11 @@ const receipts_verbs = [_]Verb{
             .{ .name = "credit-note", .kind = .boolean, .help = "a Gutschrift: send --amount negative (BHB reverses the booking)" },
             .{ .name = "dry-run", .kind = .boolean, .help = "print what would be sent, send nothing" },
         },
+        .notes =
+        \\On success the new receipt's id_by_customer is printed to stdout (table:
+        \\one key/value line; json: the created receipt), so the next step can be
+        \\`receipts book <id>` without listing first.
+        ,
     },
     .{
         .name = "delete",

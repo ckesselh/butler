@@ -323,6 +323,8 @@ butler receipts list <inbound|outbound> [flags]
 - `--deleted` — include deleted receipts
 - `--unbooked` — only receipts with no posting referencing them — UI "Ungebucht" (needs the date window)
 - `--unpaid` — only unpaid receipts — UI "Unbezahlt" (shorthand for --payment-status unpaid)
+- `--unlinked` — with --unbooked: also drop receipts already linked to a payment (payment_date set)
+- `--sweep-margin <days>` — with --unbooked: start the posting sweep this many days before --date-from (default 45)
 - `--filter <text>` — case-insensitive substring over the shown columns
 - `--limit <n>` — max rows
 - `--offset <n>` — skip the first n rows
@@ -335,6 +337,16 @@ Two distinct open-items filters, matching the "Eingangsbelege" screen:
 They are NOT the same: a receipt can be booked yet unpaid, or paid yet
 (rarely) unbooked. --unbooked caps at /postings/get's 1000 rows, so keep
 the window bounded.
+The sweep starts --sweep-margin days (default 45) before --date-from,
+because a receipt is often posted before its document date: a payslip
+dated in the payout month is posted at the previous month end. A
+posting further back still reads as falsely open; widen the margin or
+check the hit with `receipts show <id> --postings`.
+The --unbooked table adds a payment_date column. A receipt with a
+payment date but no posting already hangs on a payment: a companion
+document (the delivery note beside the invoice, the card slip beside
+the bill) whose expense is posted against another receipt, or a soft
+link from `transactions link`. Book neither; --unlinked drops them.
 The filter applies only to the primary receipt page returned for the
 current --limit/--offset. Paginate or narrow the date window; omitted
 primary rows cannot appear in the filtered result.
@@ -344,15 +356,24 @@ primary rows cannot appear in the filtered result.
 a single receipt
 
 ```
-butler receipts show <id>
+butler receipts show <id> [--postings]
 ```
 
 **Arguments:**
 
 - `id` — receipt id_by_customer
 
+**Flags:**
+
+- `--postings` — also list the postings that reference the receipt (one /postings/get sweep over its calendar year)
+
 Show a single receipt by its id_by_customer, fetched directly.
 Deleted receipts are shown too (deleted: 1).
+--postings appends the postings that reference the receipt, rendered
+like `bookings list` (json: {"receipt": …, "postings": […]} with the
+raw posting rows). They come from one sweep over the receipt's calendar
+year, since the API cannot filter postings by receipt; an empty list
+means unbooked, or posted in another year.
 
 ### `download`
 
@@ -397,6 +418,10 @@ butler receipts upload <file> --type <type> [flags]
 - `--vat-rate <n>` — vat rate
 - `--credit-note` — a Gutschrift: send --amount negative (BHB reverses the booking)
 - `--dry-run` — print what would be sent, send nothing
+
+On success the new receipt's id_by_customer is printed to stdout (table:
+one key/value line; json: the created receipt), so the next step can be
+`receipts book <id>` without listing first.
 
 ### `delete`
 

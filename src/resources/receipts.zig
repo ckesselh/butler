@@ -11,9 +11,22 @@ const output = @import("../output.zig");
 const comments = @import("comments.zig");
 const openitems = @import("openitems.zig");
 const postingline = @import("postingline.zig");
+const bookings = @import("bookings.zig");
+const date = @import("../util/date.zig");
 const Client = @import("../client.zig").Client;
 
 const cols = [_][]const u8{ "date", "type", "counterparty", "invoicenumber", "amount", "id_by_customer" };
+
+// `list --unbooked` adds payment_date: a receipt that carries one but no posting
+// already hangs on a payment (a companion document, or a soft link), which the
+// reader must see to know not to book it.
+const unbooked_cols = [_][]const u8{ "date", "type", "counterparty", "invoicenumber", "amount", "payment_date", "id_by_customer" };
+
+// How far before --date-from the `--unbooked` posting sweep starts by default.
+// Receipts are regularly posted before their document date (a payslip dated in
+// the payout month is posted at the previous month end), and a posting outside
+// the sweep makes its receipt read as falsely open.
+const default_sweep_margin_days: i64 = 45;
 
 // BHB's fixed collective creditor account ("Kreditoren-Sammelkonto", 70000 — a
 // standard account it does not let you renumber). A receipt not booked to a
@@ -51,7 +64,7 @@ fn ensureNegative(gpa: std.mem.Allocator, s: ?[]const u8) !?[]const u8 {
     return try std.fmt.allocPrint(gpa, "-{s}", .{t});
 }
 
-fn upload(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !u8 {
+fn upload(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
     // Resolve the file path (positional) and receipt type.
     const path = f.pos(2) orelse return cli.missing(stderr, "<file path>");
     const rtype = f.opt("type") orelse return cli.missing(stderr, "--type (e.g. \"invoice inbound\")");
@@ -91,7 +104,35 @@ fn upload(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.I
 
     var r = try c.post("/receipts/upload", o.items());
     defer r.deinit(c.gpa);
-    return output.reportWrite(c.gpa, stderr, r, "upload", c.api_key);
+    const code = try output.reportWrite(c.gpa, stderr, r, "upload", c.api_key);
+    if (code != 0) return code;
+    try reportUploadedId(c.gpa, stdout, r.body, out_mode);
+    return 0;
+}
+
+/// Print the id_by_customer of the receipt an upload created, when the response
+/// carries it, so the next step can be `receipts book <id>` without listing
+/// first. The API contract does not promise the field; without it nothing is
+/// printed and the upload still counts as ok.
+fn reportUploadedId(gpa: std.mem.Allocator, stdout: *std.Io.Writer, body: []const u8, out_mode: spec.Output) !void {
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, body, .{}) catch return;
+    const created: std.json.ObjectMap = output.dataObject(parsed.value) orelse blk: {
+        // Some create routes answer with a one-element array instead.
+        const arr = output.dataArray(parsed.value) orelse return;
+        if (arr.len == 0) return;
+        break :blk switch (arr[0]) {
+            .object => |o| o,
+            else => return,
+        };
+    };
+    const idv = created.get("id_by_customer") orelse return;
+    if (out_mode == .json) {
+        const s = try json.valueToAlloc(gpa, .{ .object = created });
+        try stdout.print("{s}\n", .{s});
+        return;
+    }
+    const id = try json.valueToAlloc(gpa, idv);
+    try stdout.print("id_by_customer: {s}\n", .{id});
 }
 
 /// `receipts download <id>` — save the stored receipt file. The by-id get
@@ -332,12 +373,15 @@ fn findReceipt(c: Client, ridn: i64, stderr: *std.Io.Writer) !?std.json.ObjectMa
     return obj;
 }
 
-/// The creditor account a receipt was booked against — the credit side of the
-/// posting that references it for a normal invoice, the debit side for a credit
-/// note (whose booking is reversed) — scanned over the receipt's year. Null if
-/// not yet booked.
-fn findReceiptCreditor(c: Client, rid: []const u8, rdate: []const u8, credit_note: bool) !?[]const u8 {
-    if (rdate.len < 4) return null;
+/// The postings that reference receipt `rid`, from one `/postings/get` sweep
+/// over the receipt's calendar year — the API cannot filter postings by
+/// receipt. A posting dated in another year is not found this way. Rows alias
+/// an arena kept alive for the rest of the run. With a `stderr`, hitting the
+/// endpoint's 1000-row cap is reported, since past it the answer is incomplete;
+/// a failed sweep is `error.PostingSweepFailed`.
+fn postingsReferencing(c: Client, stderr: ?*std.Io.Writer, rid: []const u8, rdate: []const u8) ![]std.json.Value {
+    var found: std.ArrayList(std.json.Value) = .empty;
+    if (rdate.len < 4) return found.items;
     const year = rdate[0..4];
     var o = try json.ObjBuilder.init(c.gpa);
     try o.str("api_key", c.api_key);
@@ -348,20 +392,84 @@ fn findReceiptCreditor(c: Client, rid: []const u8, rdate: []const u8, credit_not
     try o.end();
     var r = try c.post("/postings/get", o.items());
     defer r.deinit(c.gpa);
-    const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch return null;
-    const rows = output.dataArray(parsed.value) orelse return null;
+    const parsed = std.json.parseFromSlice(std.json.Value, c.gpa, r.body, .{ .allocate = .alloc_always }) catch
+        return error.PostingSweepFailed;
+    if (r.status != 200 or !json.envelopeSuccess(parsed.value)) return error.PostingSweepFailed;
+    const rows = output.dataArray(parsed.value) orelse return found.items;
+    if (rows.len >= 1000) if (stderr) |w|
+        try w.writeAll("warning: posting sweep hit the 1000-row cap; postings past it are not shown\n");
     for (rows) |row| switch (row) {
         .object => |obj| {
             const assigned = json.getStr(obj, "receipts_assigned_ids_by_customer") orelse continue;
             var it = std.mem.tokenizeAny(u8, assigned, " ,");
             while (it.next()) |t| {
-                if (std.mem.eql(u8, t, rid))
-                    return json.getStr(obj, if (credit_note) "debit_postingaccount_number" else "credit_postingaccount_number");
+                if (std.mem.eql(u8, t, rid)) {
+                    try found.append(c.gpa, row);
+                    break;
+                }
             }
         },
         else => {},
     };
+    return found.items;
+}
+
+/// The creditor account a receipt was booked against — the credit side of the
+/// posting that references it for a normal invoice, the debit side for a credit
+/// note (whose booking is reversed). Null if not yet booked, or when the sweep
+/// could not be read.
+fn findReceiptCreditor(c: Client, rid: []const u8, rdate: []const u8, credit_note: bool) !?[]const u8 {
+    const rows = postingsReferencing(c, null, rid, rdate) catch |e| switch (e) {
+        error.PostingSweepFailed => return null,
+        else => return e,
+    };
+    for (rows) |row| switch (row) {
+        .object => |obj| return json.getStr(obj, if (credit_note) "debit_postingaccount_number" else "credit_postingaccount_number"),
+        else => {},
+    };
     return null;
+}
+
+/// `receipts show <id> --postings`: the receipt's fields, then the postings that
+/// reference it as a `bookings list` table; in json mode one object holding
+/// both. Two requests: the receipt, and one posting sweep over its year.
+fn showWithPostings(c: Client, idn: i64, stdout: *std.Io.Writer, stderr: *std.Io.Writer, out_mode: spec.Output) !u8 {
+    const gpa = c.gpa;
+    var r = try c.postById("/receipts/get", idn, false);
+    defer r.deinit(gpa);
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, r.body, .{ .allocate = .alloc_always }) catch null;
+    if (r.status != 200 or parsed == null or !json.envelopeSuccess(parsed.?.value))
+        return output.reportFail(gpa, stderr, r, "show", c.api_key);
+    const receipt = output.dataObject(parsed.?.value) orelse {
+        try stderr.writeAll("not found.\n");
+        return 1;
+    };
+    const rid = try std.fmt.allocPrint(gpa, "{d}", .{idn});
+    const rows = postingsReferencing(c, stderr, rid, json.getStr(receipt, "date") orelse "") catch |e| switch (e) {
+        error.PostingSweepFailed => {
+            try stderr.writeAll("error: posting sweep failed; cannot tell which postings reference the receipt\n");
+            return 1;
+        },
+        else => return e,
+    };
+
+    if (out_mode == .json) {
+        var postings = std.json.Array.init(gpa);
+        for (rows) |row| try postings.append(row);
+        var top: std.json.ObjectMap = .empty;
+        try top.put(gpa, "receipt", .{ .object = receipt });
+        try top.put(gpa, "postings", .{ .array = postings });
+        const s = try std.json.Stringify.valueAlloc(gpa, std.json.Value{ .object = top }, .{});
+        try stdout.print("{s}\n", .{s});
+        return 0;
+    }
+    var it = receipt.iterator();
+    while (it.next()) |e| {
+        const v = try json.valueToAlloc(gpa, e.value_ptr.*);
+        try stdout.print("{s}: {s}\n", .{ e.key_ptr.*, v });
+    }
+    try stdout.writeAll("\npostings:\n");
+    return bookings.renderPostings(c, stdout, stderr, rows);
 }
 
 const Verb = enum { list, show, download, upload, delete, book, pay, unconfirm, comment };
@@ -401,9 +509,20 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             if (f.has("unbooked")) {
                 const from = f.opt("date-from") orelse return openitems.windowRequired("unbooked", stderr);
                 const to = f.opt("date-to") orelse return openitems.windowRequired("unbooked", stderr);
+                // The sweep starts before the receipt window (see
+                // default_sweep_margin_days); --sweep-margin overrides how far.
+                const margin = f.optInt("sweep-margin") orelse default_sweep_margin_days;
+                const sweep_from = try date.shiftDays(c.gpa, from, -margin);
+                const drop: ?[]const u8 = if (f.has("unlinked")) "payment_date" else null;
                 var r = try c.post("/receipts/get", try listBody(c, f, dir));
                 defer r.deinit(c.gpa);
-                return openitems.emit(c, stdout, stderr, r, &cols, out_mode, f.opt("filter"), from, to, "receipts_assigned_ids_by_customer", true, null);
+                return openitems.emit(c, stdout, stderr, r, &unbooked_cols, out_mode, f.opt("filter"), sweep_from, to, "receipts_assigned_ids_by_customer", true, null, drop);
+            }
+            for ([_][]const u8{ "unlinked", "sweep-margin" }) |name| {
+                if (f.has(name) or f.opt(name) != null) {
+                    try stderr.print("error: --{s} only applies together with --unbooked\n", .{name});
+                    return 2;
+                }
             }
             var r = try c.post("/receipts/get", try listBody(c, f, dir));
             defer r.deinit(c.gpa);
@@ -413,6 +532,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             // Direct read via /receipts/get/<id>. Soft-deleted receipts are
             // returned too (`deleted: "1"`), so a show can inspect them.
             const idn = f.posInt(2) orelse return cli.missing(stderr, "<id>");
+            if (f.has("postings")) return showWithPostings(c, idn, stdout, stderr, out_mode);
             var r = try c.postById("/receipts/get", idn, false);
             defer r.deinit(c.gpa);
             return (try output.emitShowObject(c.gpa, stdout, stderr, r, out_mode, c.api_key)) orelse {
@@ -420,7 +540,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
                 return 1;
             };
         },
-        .upload => return upload(c, f, stdout, stderr),
+        .upload => return upload(c, f, stdout, stderr, out_mode),
         .delete => {
             // The route takes the id as a path segment: POST
             // /receipts/delete/<id> with only api_key in the body. The spec's

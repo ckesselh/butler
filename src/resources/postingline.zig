@@ -11,6 +11,20 @@ const json = @import("../util/json.zig");
 const money = @import("../util/money.zig");
 const Client = @import("../client.zig").Client;
 
+/// BHB's limit on a posting text. A longer text is rejected server-side with
+/// error_code 31 and nothing is posted, so every posting verb checks it before
+/// sending. Counted in characters (code points), as the API counts, not bytes.
+pub const max_postingtext_chars: usize = 128;
+
+/// True when `text` fits the posting-text limit; otherwise the shared per-line
+/// diagnostic is printed and false returned.
+pub fn checkPostingText(text: []const u8, idx: usize, stderr: *std.Io.Writer) !bool {
+    const n = std.unicode.utf8CountCodepoints(text) catch text.len;
+    if (n <= max_postingtext_chars) return true;
+    try stderr.print("line {d}: posting text is {d} characters, the limit is {d}\n", .{ idx, n, max_postingtext_chars });
+    return false;
+}
+
 pub const Line = struct {
     account: []const u8,
     postingtext: []const u8,
@@ -128,6 +142,7 @@ pub fn gather(c: Client, f: *const cli.Flags, stderr: *std.Io.Writer, opts: Opti
     for (lines.items, 0..) |*l, i| {
         l.amount = (try canonicalizeAmountVat(gpa, l.amount, l.vat, i, "", stderr)) orelse
             return .{ .fail = 1 };
+        if (!try checkPostingText(l.postingtext, i, stderr)) return .{ .fail = 1 };
         if (l.receipt) |rid| {
             if (!opts.receipt_refs) {
                 try stderr.print("line {d}: 'receipt' is only supported by `transactions book`; here the receipt is the anchor of the whole posting\n", .{i});
@@ -171,6 +186,15 @@ pub fn canonicalizeAmountVat(
         return null;
     }
     return try money.renderCentsAlloc(gpa, cents);
+}
+
+test "checkPostingText counts characters, not bytes" {
+    var sink: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer sink.deinit();
+    const at_limit = "ä" ** max_postingtext_chars;
+    try std.testing.expect(try checkPostingText(at_limit, 0, &sink.writer));
+    try std.testing.expect(!try checkPostingText(at_limit ++ "x", 0, &sink.writer));
+    try std.testing.expect(try checkPostingText("", 0, &sink.writer));
 }
 
 fn lineMissing(stderr: *std.Io.Writer, idx: usize, field: []const u8) !Result {
