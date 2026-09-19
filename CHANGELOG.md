@@ -4,7 +4,7 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-09-19
 
 This release makes a booking session shorter: the ids you need are on screen,
 a receipt tells you how it is booked, and two classes of false "unbooked"
