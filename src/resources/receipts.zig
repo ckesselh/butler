@@ -8,6 +8,7 @@ const spec = @import("../spec.zig");
 const json = @import("../util/json.zig");
 const money = @import("../util/money.zig");
 const output = @import("../output.zig");
+const http = @import("../util/http.zig");
 const comments = @import("comments.zig");
 const openitems = @import("openitems.zig");
 const postingline = @import("postingline.zig");
@@ -34,7 +35,9 @@ const default_sweep_margin_days: i64 = 45;
 // (The debtor counterpart for outbound invoices is 10000.)
 const default_creditor = "70000";
 
-fn listBody(c: Client, f: *const cli.Flags, direction: []const u8) ![]u8 {
+/// The `/receipts/get` body for the list filters. `page` overrides the user's
+/// --limit/--offset; the open-items filter pages the window itself.
+fn listBody(c: Client, f: *const cli.Flags, direction: []const u8, page: ?openitems.Page) ![]u8 {
     var o = try json.ObjBuilder.init(c.gpa);
     try o.str("api_key", c.api_key);
     try o.str("list_direction", direction);
@@ -47,11 +50,29 @@ fn listBody(c: Client, f: *const cli.Flags, direction: []const u8) ![]u8 {
     try o.strOpt("due_date", f.opt("due-date"));
     if (f.has("include-offers")) try o.boolean("include_offers", true);
     if (f.has("deleted")) try o.boolean("deleted", true);
-    try json.addIntOpt(&o, "limit", f.opt("limit"));
-    try json.addIntOpt(&o, "offset", f.opt("offset"));
+    if (page) |pg| {
+        try o.int("limit", pg.limit);
+        try o.int("offset", pg.offset);
+    } else {
+        try json.addIntOpt(&o, "limit", f.opt("limit"));
+        try json.addIntOpt(&o, "offset", f.opt("offset"));
+    }
     try o.end();
     return o.toOwnedSlice();
 }
+
+/// `openitems.PageFetcher` context: one `/receipts/get` page in `direction`
+/// under the user's list filters.
+const ListPages = struct {
+    c: Client,
+    f: *const cli.Flags,
+    direction: []const u8,
+
+    fn fetch(ctx: *const anyopaque, limit: i64, offset: i64) anyerror!http.Response {
+        const self: *const ListPages = @ptrCast(@alignCast(ctx));
+        return self.c.post("/receipts/get", try listBody(self.c, self.f, self.direction, .{ .limit = limit, .offset = offset }));
+    }
+};
 
 // Make a money string negative ("8.31" -> "-8.31"; an already-negative or empty
 // value is left as-is). Used by --credit-note so a Gutschrift is uploaded with
@@ -305,13 +326,12 @@ pub fn settle(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *s
         else
             try std.fmt.allocPrint(gpa, "Ausgleich {s}", .{counterparty});
 
-        // The line clears the creditor the receipt was booked against. A normal
-        // invoice books Soll expense / Haben creditor, so the creditor is the
-        // credit side; a credit note (negative amount) books it reversed, so the
-        // creditor is the debit side. Pick the side from the receipt's sign.
+        // The line clears the creditor or debtor the receipt was booked
+        // against; `settleSide` picks that side of the receipt's posting.
         const credit_note = (money.parseCents(json.getStr(receipt, "amount") orelse "0") orelse 0) < 0;
-        const creditor = (if (single) f.opt("account") else null) orelse (try findReceiptCreditor(c, rid, rdate, credit_note)) orelse {
-            try stderr.print("error: receipt {s} is not booked yet (cannot derive its creditor); book it first, or pass --account\n", .{rid});
+        const outbound = std.mem.eql(u8, json.getStr(receipt, "list_direction") orelse "", "outbound");
+        const creditor = (if (single) f.opt("account") else null) orelse (try findSettleAccount(c, rid, rdate, settleSide(outbound, credit_note))) orelse {
+            try stderr.print("error: receipt {s} is not booked yet (cannot derive its creditor or debtor); book it first, or pass --account\n", .{rid});
             return 1;
         };
 
@@ -339,7 +359,35 @@ pub fn settle(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *s
     }
     var r = try c.post("/postings/add/transaction", body);
     defer r.deinit(gpa);
-    return output.reportWrite(gpa, stderr, r, "settle", c.api_key);
+    const code = try output.reportWrite(gpa, stderr, r, "settle", c.api_key);
+    try hintLinkedReceiptPosted(gpa, stderr, r);
+    return code;
+}
+
+/// After a failed `/postings/add/transaction`, explain error 7 ("a receipt
+/// linked to the transaction has already been posted"). Besides a payment that
+/// is visibly booked already, it answers a payment that the web app has matched
+/// to a booked receipt and offers as a booking suggestion (a blue field on the
+/// payment). Whether that suggestion is a stored unconfirmed posting or only a
+/// match proposal is not visible over the API: `/postings/get` lists no posting
+/// for the payment either way (docs/bhb-api-quirks.md). Any other response
+/// prints nothing.
+pub fn hintLinkedReceiptPosted(gpa: std.mem.Allocator, stderr: *std.Io.Writer, r: http.Response) !void {
+    if (r.status == 200 and json.bodySuccess(gpa, r.body)) return;
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, r.body, .{}) catch return;
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else => return,
+    };
+    if ((json.getInt(obj, "error_code") orelse 0) != 7) return;
+    try stderr.writeAll(
+        \\hint: a receipt linked to this payment is already posted on it. If
+        \\  `bookings list` shows no posting for the payment, the web app usually
+        \\  holds a booking suggestion for it (a blue field on the payment) that the
+        \\  API does not list. Accept it, or discard it, in the web app. Nothing was
+        \\  posted here.
+        \\
+    );
 }
 
 fn absCents(s: ?[]const u8) i64 {
@@ -418,16 +466,57 @@ fn postingsReferencing(c: Client, stderr: ?*std.Io.Writer, rid: []const u8, rdat
 /// posting that references it for a normal invoice, the debit side for a credit
 /// note (whose booking is reversed). Null if not yet booked, or when the sweep
 /// could not be read.
-fn findReceiptCreditor(c: Client, rid: []const u8, rdate: []const u8, credit_note: bool) !?[]const u8 {
+fn findSettleAccount(c: Client, rid: []const u8, rdate: []const u8, side: Side) !?[]const u8 {
     const rows = postingsReferencing(c, null, rid, rdate) catch |e| switch (e) {
         error.PostingSweepFailed => return null,
         else => return e,
     };
     for (rows) |row| switch (row) {
-        .object => |obj| return json.getStr(obj, if (credit_note) "debit_postingaccount_number" else "credit_postingaccount_number"),
+        .object => |obj| return json.getStr(obj, switch (side) {
+            .debit => "debit_postingaccount_number",
+            .credit => "credit_postingaccount_number",
+        }),
         else => {},
     };
     return null;
+}
+
+const Side = enum { debit, credit };
+
+/// The side of a receipt's own posting that holds its creditor or debtor, which
+/// the settling line clears. An inbound invoice books Soll expense / Haben
+/// creditor, an outbound invoice Soll debtor / Haben revenue; a credit note
+/// (negative amount) books either the other way round.
+fn settleSide(outbound: bool, credit_note: bool) Side {
+    return if (outbound != credit_note) .debit else .credit;
+}
+
+test "settleSide: the creditor or debtor side of the receipt's posting" {
+    try std.testing.expectEqual(Side.credit, settleSide(false, false)); // inbound invoice: Haben creditor
+    try std.testing.expectEqual(Side.debit, settleSide(false, true)); // inbound credit note
+    try std.testing.expectEqual(Side.debit, settleSide(true, false)); // outbound invoice: Soll debtor
+    try std.testing.expectEqual(Side.credit, settleSide(true, true)); // outbound credit note
+}
+
+test "hintLinkedReceiptPosted speaks only for error 7" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const gpa = arena.allocator();
+    var buf: [1024]u8 = undefined;
+
+    var w: std.Io.Writer = .fixed(&buf);
+    const e7 = "{\"success\":false,\"error_code\":7,\"message\":\"a receipt linked to the transaction has already been posted\"}";
+    try hintLinkedReceiptPosted(gpa, &w, .{ .status = 400, .body = @constCast(e7) });
+    try std.testing.expect(std.mem.indexOf(u8, w.buffered(), "booking suggestion") != null);
+
+    w = .fixed(&buf);
+    const e27 = "{\"success\":false,\"error_code\":27,\"message\":\"amounts do not match\"}";
+    try hintLinkedReceiptPosted(gpa, &w, .{ .status = 400, .body = @constCast(e27) });
+    try std.testing.expectEqual(@as(usize, 0), w.buffered().len);
+
+    w = .fixed(&buf);
+    try hintLinkedReceiptPosted(gpa, &w, .{ .status = 200, .body = @constCast("{\"success\":true,\"message\":\"\"}") });
+    try std.testing.expectEqual(@as(usize, 0), w.buffered().len);
 }
 
 /// `receipts show <id> --postings`: the receipt's fields, then the postings that
@@ -513,10 +602,12 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
                 // default_sweep_margin_days); --sweep-margin overrides how far.
                 const margin = f.optInt("sweep-margin") orelse default_sweep_margin_days;
                 const sweep_from = try date.shiftDays(c.gpa, from, -margin);
-                const drop: ?[]const u8 = if (f.has("unlinked")) "payment_date" else null;
-                var r = try c.post("/receipts/get", try listBody(c, f, dir));
-                defer r.deinit(c.gpa);
-                return openitems.emit(c, stdout, stderr, r, &unbooked_cols, out_mode, f.opt("filter"), sweep_from, to, "receipts_assigned_ids_by_customer", true, null, drop);
+                const pages: ListPages = .{ .c = c, .f = f, .direction = dir };
+                return openitems.emit(c, stdout, stderr, .{ .ctx = &pages, .fetch = ListPages.fetch }, &unbooked_cols, out_mode, f.opt("filter"), sweep_from, to, .{
+                    .posting_field = "receipts_assigned_ids_by_customer",
+                    .multi = true,
+                    .drop_nonempty = if (f.has("unlinked")) "payment_date" else null,
+                }, f.optInt("offset") orelse 0, f.optInt("limit"));
             }
             for ([_][]const u8{ "unlinked", "sweep-margin" }) |name| {
                 if (f.has(name) or f.opt(name) != null) {
@@ -524,7 +615,7 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
                     return 2;
                 }
             }
-            var r = try c.post("/receipts/get", try listBody(c, f, dir));
+            var r = try c.post("/receipts/get", try listBody(c, f, dir, null));
             defer r.deinit(c.gpa);
             return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
         },

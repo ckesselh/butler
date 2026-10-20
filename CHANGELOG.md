@@ -4,6 +4,35 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+This release makes the open-item filters trustworthy over a long date range,
+and fixes settling an outbound invoice.
+
+### Fixed
+
+- `receipts list --unbooked` (with or without `--unlinked`) and
+  `transactions list --unbooked` / `--missing-receipt` now check every item in
+  the date window. Before, they only looked at the first page the list
+  returned (by default, or as set with `--limit`), so over a long range, such
+  as a whole year with more receipts than the limit, open items past that page
+  were missing, and the list could come back empty without any warning.
+- `receipts pay` and `transactions settle` on an outbound invoice now clear the
+  debtor the invoice was booked to. Before, they picked the invoice's revenue
+  account unless `--account` was given.
+
+### Changed
+
+- With an open-item filter, `--limit` and `--offset` count open items, not
+  rows of the raw list. When `--limit` cuts the list short, a note on stderr
+  says how many open items there are and which `--offset` continues.
+- Error 7 ("a receipt linked to the transaction has already been posted") on
+  `receipts pay`, `transactions settle` or `transactions book` now comes with
+  a hint. If the payment shows no posting, the web app usually holds a booking
+  suggestion for it (a blue field on the payment): accept or discard it there.
+  The API does not show that suggestion, so `transactions list --unbooked`
+  keeps listing the payment until then.
+
 ## [0.8.0] - 2026-09-19
 
 This release makes a booking session shorter: the ids you need are on screen,

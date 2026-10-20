@@ -96,15 +96,15 @@ second /postings/get sweep over the window:
 .br
                      an unbooked payment has no receipt either.
 .br
+The filters cover every payment in the date window: butler pages through
+.br
+the window, filters, and only then applies \-\-offset/\-\-limit to the open
+.br
+payments (newest first). A note on stderr says when \-\-limit cut the list.
+.br
 Because /postings/get caps at 1000 rows, keep the window bounded or items
 .br
 past the cap may show as falsely open.
-.br
-The filter applies only to the primary transaction page returned for the
-.br
-current \-\-limit/\-\-offset. Paginate or narrow the date window; omitted
-.br
-primary rows cannot appear in the filtered result.
 .br
 .SS butler transactions show <id>
 .TP
@@ -172,9 +172,9 @@ under "Erweitertes Buchen".
 .PP
 A line may name a `receipt`, which clears that receipt's open item —
 .br
-the same line `receipts pay` would post, with its creditor as the
+the same line `receipts pay` would post, with its creditor or debtor as
 .br
-account. Use it when a payment does NOT equal its receipt: both
+the account. Use it when a payment does NOT equal its receipt: both
 .br
 `receipts book` and `receipts pay` reject a mismatch (error_code 37 and
 .br
@@ -211,13 +211,19 @@ print the derived payload, send nothing
 .PP
 Payment\-first settlement: clears the open items of the listed receipts by
 .br
-posting one creditor\->bank line each, in a single /postings/add/transaction
+posting one creditor/debtor line each, in a single /postings/add/transaction
 .br
 that marks them paid. Use when one payment covers several invoices; the
 .br
 receipt amounts must sum to the transaction (the API rejects a mismatch).
 .br
 For a single receipt, `receipts pay <id> \-\-with <tx>` reads more naturally.
+.br
+Error 7 ("a receipt linked to the transaction has already been posted"):
+.br
+if the payment shows no posting, the web app usually holds a booking
+.br
+suggestion for it; accept or discard it there (see `receipts pay`).
 .br
 .SS butler transactions link <tx> <receipt>
 .TP
@@ -370,11 +376,11 @@ the bill) whose expense is posted against another receipt, or a soft
 .br
 link from `transactions link`. Book neither; \-\-unlinked drops them.
 .br
-The filter applies only to the primary receipt page returned for the
+\-\-unbooked covers every receipt in the date window: butler pages through
 .br
-current \-\-limit/\-\-offset. Paginate or narrow the date window; omitted
+the window, filters, and only then applies \-\-offset/\-\-limit to the open
 .br
-primary rows cannot appear in the filtered result.
+receipts (oldest first). A note on stderr says when \-\-limit cut the list.
 .br
 .SS butler receipts show <id> [\-\-postings]
 .TP
@@ -536,7 +542,7 @@ the bank transaction id_by_customer that pays it (required)
 part\-payment amount (default: the receipt's open amount)
 .TP
 .B \-\-account acct
-override the creditor account (default: from the receipt's booking)
+override the creditor/debtor account (default: from the receipt's booking)
 .TP
 .B \-\-text s
 posting text (default: counterparty + invoice number)
@@ -546,7 +552,9 @@ print the derived payload, send nothing
 .PP
 Mirrors the UI "Beleg einer Zahlung zuordnen": it settles the receipt's
 .br
-open item by posting the creditor\->bank line carrying the receipt
+open item by posting the creditor (inbound) or debtor (outbound) line
+.br
+against the bank, carrying the receipt
 .br
 (/postings/add/transaction with the receipt as an open item), which marks
 .br
@@ -555,6 +563,18 @@ it paid. The account, amount and text are resolved from the receipt's own
 booking, so the happy path is just the two ids. This is NOT
 .br
 /transactions/assign/receipt, which only links without settling.
+.br
+Error 7 ("a receipt linked to the transaction has already been posted"):
+.br
+if `bookings list` shows a posting on the payment, it is booked already.
+.br
+If it shows none, the web app has usually matched a booked receipt to the
+.br
+payment and shows a booking suggestion on it (a blue field). The API
+.br
+does not list it, so `transactions list \-\-unbooked` still shows the
+.br
+payment. Accept the suggestion in the web app, or discard it there.
 .br
 .SS butler receipts comment <id> \-\-text <s> [\-\-dry\-run]
 .TP

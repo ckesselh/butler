@@ -26,9 +26,9 @@ const page_guard = 10_000;
 /// The decision after a page comes back: stop (the sweep is complete), continue
 /// from a new offset, or give up because the round-trip guard tripped. Pure and
 /// unit-tested — it is the crux of the paging loop's correctness.
-const Step = union(enum) { stop, again: i64, give_up };
+pub const Step = union(enum) { stop, again: i64, give_up };
 
-fn nextStep(offset: i64, page_len: usize, iters: usize) Step {
+pub fn nextStep(offset: i64, page_len: usize, iters: usize) Step {
     if (page_len == 0) return .stop; // an empty page is the only "complete" signal
     if (iters >= page_guard) return .give_up; // a non-empty page past the guard ⇒ server not advancing
     return .{ .again = offset + @as(i64, @intCast(page_len)) };
