@@ -4,7 +4,7 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.1] - 2026-10-20
 
 This release makes the open-item filters trustworthy over a long date range,
 and fixes settling an outbound invoice.
