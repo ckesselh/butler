@@ -269,9 +269,9 @@ const transactions_verbs = [_]Verb{
         \\that marks them paid. Use when one payment covers several invoices; the
         \\receipt amounts must sum to the transaction (the API rejects a mismatch).
         \\For a single receipt, `receipts pay <id> --with <tx>` reads more naturally.
-        \\Error 7 ("a receipt linked to the transaction has already been posted")
-        \\means the web app already offers a booking suggestion for the payment;
-        \\accept or discard it there (see `receipts pay`).
+        \\Error 7 ("a receipt linked to the transaction has already been posted"):
+        \\if the payment shows no posting, the web app usually holds a booking
+        \\suggestion for it; accept or discard it there (see `receipts pay`).
         ,
     },
     .{
@@ -479,10 +479,11 @@ const receipts_verbs = [_]Verb{
         \\booking, so the happy path is just the two ids. This is NOT
         \\/transactions/assign/receipt, which only links without settling.
         \\Error 7 ("a receipt linked to the transaction has already been posted"):
-        \\the web app has already matched a booked receipt to the payment and shows
-        \\a booking suggestion on it (a blue field). The API lists no posting for
-        \\it, so `transactions list --unbooked` still shows the payment. Accept the
-        \\suggestion in the web app, or discard it there first.
+        \\if `bookings list` shows a posting on the payment, it is booked already.
+        \\If it shows none, the web app has usually matched a booked receipt to the
+        \\payment and shows a booking suggestion on it (a blue field). The API
+        \\does not list it, so `transactions list --unbooked` still shows the
+        \\payment. Accept the suggestion in the web app, or discard it there.
         ,
     },
     .{

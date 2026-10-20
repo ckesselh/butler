@@ -365,12 +365,13 @@ pub fn settle(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *s
 }
 
 /// After a failed `/postings/add/transaction`, explain error 7 ("a receipt
-/// linked to the transaction has already been posted"). It answers a payment
-/// that the web app has already matched to a booked receipt and offers as a
-/// booking suggestion (a blue field on the payment). Whether that suggestion is
-/// a stored unconfirmed posting or only a match proposal is not visible over
-/// the API: `/postings/get` lists no posting for the payment either way
-/// (docs/bhb-api-quirks.md). Any other response prints nothing.
+/// linked to the transaction has already been posted"). Besides a payment that
+/// is visibly booked already, it answers a payment that the web app has matched
+/// to a booked receipt and offers as a booking suggestion (a blue field on the
+/// payment). Whether that suggestion is a stored unconfirmed posting or only a
+/// match proposal is not visible over the API: `/postings/get` lists no posting
+/// for the payment either way (docs/bhb-api-quirks.md). Any other response
+/// prints nothing.
 pub fn hintLinkedReceiptPosted(gpa: std.mem.Allocator, stderr: *std.Io.Writer, r: http.Response) !void {
     if (r.status == 200 and json.bodySuccess(gpa, r.body)) return;
     const parsed = std.json.parseFromSlice(std.json.Value, gpa, r.body, .{}) catch return;
@@ -380,11 +381,11 @@ pub fn hintLinkedReceiptPosted(gpa: std.mem.Allocator, stderr: *std.Io.Writer, r
     };
     if ((json.getInt(obj, "error_code") orelse 0) != 7) return;
     try stderr.writeAll(
-        \\hint: the web app has already matched a booked receipt to this payment and
-        \\  offers it as a booking suggestion (a blue field on the payment). The API
-        \\  does not list that suggestion, and it blocks settling via the API.
-        \\  Accept it (or discard it and book the payment) in the web app; nothing
-        \\  was posted here.
+        \\hint: a receipt linked to this payment is already posted on it. If
+        \\  `bookings list` shows no posting for the payment, the web app usually
+        \\  holds a booking suggestion for it (a blue field on the payment) that the
+        \\  API does not list. Accept it, or discard it, in the web app. Nothing was
+        \\  posted here.
         \\
     );
 }

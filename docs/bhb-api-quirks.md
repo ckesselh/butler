@@ -362,8 +362,9 @@ sections.
   test]** An outbound invoice was booked via `/postings/add/receipt`. BHB then
   matched the incoming payment to it by the invoice number in the payment's
   purpose line: the receipt got a `payment_date`, and
-  `/transactions/assigned-receipts/get` listed it for the payment (with and
-  without `confirmed_only`). In the web app the payment showed a booking
+  `/transactions/assigned-receipts/get` listed it for the payment (queried
+  without `confirmed_only`; that flag was not checked before the suggestion
+  was accepted, and afterwards made no difference). In the web app the payment showed a booking
   suggestion as a blue field. Over the API the payment looked unbooked:
   `/postings/get` returned no posting for it. Settling it with
   `/postings/add/transaction` (one line on the debtor, the receipt in

@@ -26,12 +26,12 @@ and fixes settling an outbound invoice.
 - With an open-item filter, `--limit` and `--offset` count open items, not
   rows of the raw list. When `--limit` cuts the list short, a note on stderr
   says how many open items there are and which `--offset` continues.
-- Settling a payment that the web app has already matched to a booked receipt
-  fails with error 7 ("a receipt linked to the transaction has already been
-  posted"). `receipts pay`, `transactions settle` and `transactions book` now
-  explain it: accept or discard the booking suggestion on the payment in the
-  web app. The API does not show that suggestion, so `transactions list
-  --unbooked` keeps listing the payment until then.
+- Error 7 ("a receipt linked to the transaction has already been posted") on
+  `receipts pay`, `transactions settle` or `transactions book` now comes with
+  a hint. If the payment shows no posting, the web app usually holds a booking
+  suggestion for it (a blue field on the payment): accept or discard it there.
+  The API does not show that suggestion, so `transactions list --unbooked`
+  keeps listing the payment until then.
 
 ## [0.8.0] - 2026-09-19
 

@@ -219,11 +219,11 @@ receipt amounts must sum to the transaction (the API rejects a mismatch).
 .br
 For a single receipt, `receipts pay <id> \-\-with <tx>` reads more naturally.
 .br
-Error 7 ("a receipt linked to the transaction has already been posted")
+Error 7 ("a receipt linked to the transaction has already been posted"):
 .br
-means the web app already offers a booking suggestion for the payment;
+if the payment shows no posting, the web app usually holds a booking
 .br
-accept or discard it there (see `receipts pay`).
+suggestion for it; accept or discard it there (see `receipts pay`).
 .br
 .SS butler transactions link <tx> <receipt>
 .TP
@@ -566,13 +566,15 @@ booking, so the happy path is just the two ids. This is NOT
 .br
 Error 7 ("a receipt linked to the transaction has already been posted"):
 .br
-the web app has already matched a booked receipt to the payment and shows
+if `bookings list` shows a posting on the payment, it is booked already.
 .br
-a booking suggestion on it (a blue field). The API lists no posting for
+If it shows none, the web app has usually matched a booked receipt to the
 .br
-it, so `transactions list \-\-unbooked` still shows the payment. Accept the
+payment and shows a booking suggestion on it (a blue field). The API
 .br
-suggestion in the web app, or discard it there first.
+does not list it, so `transactions list \-\-unbooked` still shows the
+.br
+payment. Accept the suggestion in the web app, or discard it there.
 .br
 .SS butler receipts comment <id> \-\-text <s> [\-\-dry\-run]
 .TP
