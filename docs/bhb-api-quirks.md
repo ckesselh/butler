@@ -484,6 +484,12 @@ sections.
   receipt or transaction with no posting is therefore unreadable via the API.
   *butler: `bookings list --comments` adds the column; there is deliberately no
   `comments list` verb, since it could only guess at the window.*
+- `[FYI]` **A receipt comment shows only on the receipt's own posting, and
+  fixing does not block it.** `/comments/add` accepts a receipt whose posting
+  is already fixed (`fixed: "1"`), and `/postings/get` then returns the comment
+  on that posting. The settlement posting that references the same receipt (the
+  bank-side "Ausgleich" row) carries no `comment`, so a sweep limited to
+  financial accounts or to the bank account misses it. **[verified 2026-10-20]**
 - `[FYI]` **`comment_text` is 2..210 characters**, and the limit counts
   characters rather than bytes — 210 `§` (420 bytes) is accepted. Violations
   come back as `error_code` 12 (invalid) or 13 (absent). **[confirmed]**
