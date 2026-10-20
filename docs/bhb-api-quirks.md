@@ -57,6 +57,7 @@ sections.
 | 22 | GAP | The web UI's "beleglos" (no receipt required) flag on a payment is neither readable nor settable via the API; "Fehlender Beleg" cannot be reproduced exactly | Transaction-linked postings |
 | 23 | BUG | Creditor `additional_address_line` writes return success but remain `null` on API readback | Accounts & subledgers |
 | 24 | INCONSISTENT | `id_by_customer` is numeric in transaction-list rows but a string in the direct by-id response | Response envelope |
+| 25 | GAP | A booking suggestion the web app shows on a payment is invisible to `/postings/get`, yet `/postings/add/transaction` refuses to settle the payment (error 7) | Transaction-linked postings |
 
 ## Authentication
 
@@ -288,11 +289,16 @@ sections.
   (`{"date":"ASC"}`). **[spec]**
 - `[FYI]` List endpoints cap at high limits (postings `limit` max 1000;
   transactions / receipts max 500). **[spec]**
-- `[FYI]` *butler:* `--unbooked` and `--missing-receipt` are client-side
-  anti-joins over the primary list page and a postings sweep. They cannot find
-  primary rows omitted by `--limit`/`--offset`, and a truncated postings sweep
-  can create false positives. Paginate the primary list or use a narrow date
-  window, then verify each hit against postings. This is a CLI workflow limit,
+- `[FYI]` `/transactions/get` and `/receipts/get` reject `limit` above 500
+  (`"invalid limit specified"`, error 9 resp. 10), page stably by `offset`,
+  and answer an offset past the end with an empty success. **[verified
+  2026-10-20]**
+- `[FYI]` *butler:* `--unbooked`, `--unlinked` and `--missing-receipt` are
+  client-side anti-joins of the primary list against a postings sweep. butler
+  pages the primary list through the whole date window (500 rows per page)
+  before filtering, and applies `--limit`/`--offset` to the open items only.
+  A truncated postings sweep (1000-row cap) can still create false positives;
+  butler warns when the sweep hits the cap. This is a CLI workflow concern,
   not a BHB API defect.
 
 ## Receipts (`/receipts/*`)
@@ -350,6 +356,39 @@ sections.
 - `[INCONSISTENT]` **`oi_receipts_ids_by_customer` is REQUIRED even with
   open-item postings off.** Send one `null` per line (an array sized to the
   lines). **[spec]** *butler: does this automatically.*
+
+- `[GAP]` **A booking suggestion on a payment is invisible to the API, and
+  blocks settling it.** **[observed 2026-10-20; not reproduced in a controlled
+  test]** An outbound invoice was booked via `/postings/add/receipt`. BHB then
+  matched the incoming payment to it by the invoice number in the payment's
+  purpose line: the receipt got a `payment_date`, and
+  `/transactions/assigned-receipts/get` listed it for the payment (with and
+  without `confirmed_only`). In the web app the payment showed a booking
+  suggestion as a blue field. Over the API the payment looked unbooked:
+  `/postings/get` returned no posting for it. Settling it with
+  `/postings/add/transaction` (one line on the debtor, the receipt in
+  `oi_receipts_ids_by_customer`) failed with `error_code` 7, "a receipt linked
+  to the transaction has already been posted". Clicking the blue field in the
+  web app accepted the suggestion (the field turned green). The resulting
+  posting is the settlement the API call was meant to create.
+  - Open: was the suggestion a stored *unconfirmed* posting (the same
+    invisibility as ticket 443636, extended to transaction postings) or only
+    a match proposal that became a posting on the click? Evidence for a
+    stored posting: the accepted posting carries a lower booking number than
+    15 postings created via the API between the failed call and the click.
+    Booking numbers are otherwise assigned in creation order (those 15 are
+    consecutive, in exactly the order they were created, although their
+    dates are not), and the account had no booking number above the last of
+    them. The account also shows unused gaps in the number range, which could
+    be further invisible postings or deleted ones; the API cannot tell.
+  - Open: when BHB creates such suggestions, and whether this is new. Earlier
+    settlements via the API, including an outbound invoice, succeeded; as far
+    as known, in those cases the payment had not been matched to the receipt
+    beforehand.
+  - *butler: `receipts pay` / `transactions settle` / `transactions book`
+    print a hint on error 7: accept or discard the suggestion in the web app.
+    `transactions list --unbooked` cannot see the suggestion and keeps listing
+    such a payment.*
 
 - `[GAP]` **The web UI's "beleglos" flag (payment needs no receipt) is
   invisible to the API.** In the web app a booked payment without a receipt

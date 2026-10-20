@@ -188,11 +188,11 @@ const transactions_verbs = [_]Verb{
         \\  --missing-receipt  no posting carries a receipt for the payment — the
         \\                     "Fehlender Beleg" case. A superset of --unbooked, since
         \\                     an unbooked payment has no receipt either.
+        \\The filters cover every payment in the date window: butler pages through
+        \\the window, filters, and only then applies --offset/--limit to the open
+        \\payments (newest first). A note on stderr says when --limit cut the list.
         \\Because /postings/get caps at 1000 rows, keep the window bounded or items
         \\past the cap may show as falsely open.
-        \\The filter applies only to the primary transaction page returned for the
-        \\current --limit/--offset. Paginate or narrow the date window; omitted
-        \\primary rows cannot appear in the filtered result.
         ,
     },
     .{
@@ -238,8 +238,8 @@ const transactions_verbs = [_]Verb{
         \\under "Erweitertes Buchen".
         \\
         \\A line may name a `receipt`, which clears that receipt's open item —
-        \\the same line `receipts pay` would post, with its creditor as the
-        \\account. Use it when a payment does NOT equal its receipt: both
+        \\the same line `receipts pay` would post, with its creditor or debtor as
+        \\the account. Use it when a payment does NOT equal its receipt: both
         \\`receipts book` and `receipts pay` reject a mismatch (error_code 37 and
         \\27), because the postings must sum to the receipt and to the payment
         \\respectively. Booking the payment instead lets the receipt line settle
@@ -265,10 +265,13 @@ const transactions_verbs = [_]Verb{
         },
         .notes =
         \\Payment-first settlement: clears the open items of the listed receipts by
-        \\posting one creditor->bank line each, in a single /postings/add/transaction
+        \\posting one creditor/debtor line each, in a single /postings/add/transaction
         \\that marks them paid. Use when one payment covers several invoices; the
         \\receipt amounts must sum to the transaction (the API rejects a mismatch).
         \\For a single receipt, `receipts pay <id> --with <tx>` reads more naturally.
+        \\Error 7 ("a receipt linked to the transaction has already been posted")
+        \\means the web app already offers a booking suggestion for the payment;
+        \\accept or discard it there (see `receipts pay`).
         ,
     },
     .{
@@ -347,9 +350,9 @@ const receipts_verbs = [_]Verb{
         \\document (the delivery note beside the invoice, the card slip beside
         \\the bill) whose expense is posted against another receipt, or a soft
         \\link from `transactions link`. Book neither; --unlinked drops them.
-        \\The filter applies only to the primary receipt page returned for the
-        \\current --limit/--offset. Paginate or narrow the date window; omitted
-        \\primary rows cannot appear in the filtered result.
+        \\--unbooked covers every receipt in the date window: butler pages through
+        \\the window, filters, and only then applies --offset/--limit to the open
+        \\receipts (oldest first). A note on stderr says when --limit cut the list.
         ,
     },
     .{
@@ -463,17 +466,23 @@ const receipts_verbs = [_]Verb{
         .flags = &.{
             .{ .name = "with", .required = true, .arg = "tx", .help = "the bank transaction id_by_customer that pays it", .int = true },
             .{ .name = "amount", .arg = "n", .help = "part-payment amount (default: the receipt's open amount)" },
-            .{ .name = "account", .arg = "acct", .help = "override the creditor account (default: from the receipt's booking)" },
+            .{ .name = "account", .arg = "acct", .help = "override the creditor/debtor account (default: from the receipt's booking)" },
             .{ .name = "text", .arg = "s", .help = "posting text (default: counterparty + invoice number)" },
             .{ .name = "dry-run", .kind = .boolean, .help = "print the derived payload, send nothing" },
         },
         .notes =
         \\Mirrors the UI "Beleg einer Zahlung zuordnen": it settles the receipt's
-        \\open item by posting the creditor->bank line carrying the receipt
+        \\open item by posting the creditor (inbound) or debtor (outbound) line
+        \\against the bank, carrying the receipt
         \\(/postings/add/transaction with the receipt as an open item), which marks
         \\it paid. The account, amount and text are resolved from the receipt's own
         \\booking, so the happy path is just the two ids. This is NOT
         \\/transactions/assign/receipt, which only links without settling.
+        \\Error 7 ("a receipt linked to the transaction has already been posted"):
+        \\the web app has already matched a booked receipt to the payment and shows
+        \\a booking suggestion on it (a blue field). The API lists no posting for
+        \\it, so `transactions list --unbooked` still shows the payment. Accept the
+        \\suggestion in the web app, or discard it there first.
         ,
     },
     .{

@@ -7,6 +7,7 @@ const cli = @import("../cli.zig");
 const spec = @import("../spec.zig");
 const json = @import("../util/json.zig");
 const output = @import("../output.zig");
+const http = @import("../util/http.zig");
 const comments = @import("comments.zig");
 const openitems = @import("openitems.zig");
 const postingline = @import("postingline.zig");
@@ -20,7 +21,9 @@ const cols = [_][]const u8{ "id_by_customer", "booking_date", "value_date", "amo
 // Columns for the receipts assigned to a transaction (`transactions receipts`).
 const receipt_cols = [_][]const u8{ "id_by_customer", "invoicenumber", "amount", "filename" };
 
-fn listBody(c: Client, f: *const cli.Flags) ![]u8 {
+/// The `/transactions/get` body for the list filters. `page` overrides the
+/// user's --limit/--offset; the open-items filters page the window themselves.
+fn listBody(c: Client, f: *const cli.Flags, page: ?openitems.Page) ![]u8 {
     var o = try json.ObjBuilder.init(c.gpa);
     try o.str("api_key", c.api_key);
     try o.strOpt("date_from", f.opt("date-from"));
@@ -29,11 +32,28 @@ fn listBody(c: Client, f: *const cli.Flags) ![]u8 {
     try json.addIntOpt(&o, "account", f.opt("account"));
     try json.addIntOpt(&o, "id_by_customer_from", f.opt("id-from"));
     try json.addIntOpt(&o, "id_by_customer_to", f.opt("id-to"));
-    try json.addIntOpt(&o, "limit", f.opt("limit"));
-    try json.addIntOpt(&o, "offset", f.opt("offset"));
+    if (page) |pg| {
+        try o.int("limit", pg.limit);
+        try o.int("offset", pg.offset);
+    } else {
+        try json.addIntOpt(&o, "limit", f.opt("limit"));
+        try json.addIntOpt(&o, "offset", f.opt("offset"));
+    }
     try o.end();
     return o.toOwnedSlice();
 }
+
+/// `openitems.PageFetcher` context: one `/transactions/get` page under the
+/// user's list filters.
+const ListPages = struct {
+    c: Client,
+    f: *const cli.Flags,
+
+    fn fetch(ctx: *const anyopaque, limit: i64, offset: i64) anyerror!http.Response {
+        const self: *const ListPages = @ptrCast(@alignCast(ctx));
+        return self.c.post("/transactions/get", try listBody(self.c, self.f, .{ .limit = limit, .offset = offset }));
+    }
+};
 
 const Verb = enum { list, show, book, settle, unconfirm, link, unlink, receipts, comment };
 
@@ -73,14 +93,16 @@ pub fn run(c: Client, verb: []const u8, f: *const cli.Flags, stdout: *std.Io.Wri
             if (open_filter) |flag| {
                 const from = f.opt("date-from") orelse return openitems.windowRequired(flag, stderr);
                 const to = f.opt("date-to") orelse return openitems.windowRequired(flag, stderr);
-                var r = try c.post("/transactions/get", try listBody(c, f));
-                defer r.deinit(c.gpa);
-                // For --missing-receipt, only postings that carry a receipt count
-                // as "has a receipt"; the anti-join then returns those without one.
-                const require_field: ?[]const u8 = if (f.has("missing-receipt")) "receipts_assigned_ids_by_customer" else null;
-                return openitems.emit(c, stdout, stderr, r, &cols, out_mode, f.opt("filter"), from, to, "transaction_id_by_customer", false, require_field, null);
+                const pages: ListPages = .{ .c = c, .f = f };
+                return openitems.emit(c, stdout, stderr, .{ .ctx = &pages, .fetch = ListPages.fetch }, &cols, out_mode, f.opt("filter"), from, to, .{
+                    .posting_field = "transaction_id_by_customer",
+                    // For --missing-receipt, only postings that carry a receipt
+                    // count as "has a receipt"; the anti-join then returns the
+                    // payments without one.
+                    .require_field = if (f.has("missing-receipt")) "receipts_assigned_ids_by_customer" else null,
+                }, f.optInt("offset") orelse 0, f.optInt("limit"));
             }
-            var r = try c.post("/transactions/get", try listBody(c, f));
+            var r = try c.post("/transactions/get", try listBody(c, f, null));
             defer r.deinit(c.gpa);
             return output.emitList(c.gpa, stdout, stderr, r, &cols, out_mode, f.opt("filter"), c.api_key);
         },
@@ -138,7 +160,9 @@ fn book(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.Io.
     }
     var r = try c.post("/postings/add/transaction", body);
     defer r.deinit(gpa);
-    return output.reportWrite(gpa, stderr, r, "book transaction", c.api_key);
+    const code = try output.reportWrite(gpa, stderr, r, "book transaction", c.api_key);
+    try receipts.hintLinkedReceiptPosted(gpa, stderr, r);
+    return code;
 }
 
 /// `transactions link`/`unlink <tx> <receipt>` — link or unlink a receipt and a
