@@ -398,6 +398,7 @@ const receipts_verbs = [_]Verb{
             .{ .name = "counterparty", .arg = "text", .help = "counterparty" },
             .{ .name = "invoice-number", .arg = "s", .help = "invoice number" },
             .{ .name = "date", .arg = "YYYY-MM-DD", .help = "document date" },
+            .{ .name = "due-date", .arg = "YYYY-MM-DD", .help = "payment due date" },
             .{ .name = "amount", .arg = "n", .help = "gross amount" },
             .{ .name = "vat-rate", .arg = "n", .help = "vat rate" },
             .{ .name = "credit-note", .kind = .boolean, .help = "a Gutschrift: send --amount negative (BHB reverses the booking)" },
@@ -407,6 +408,10 @@ const receipts_verbs = [_]Verb{
         \\On success the new receipt's id_by_customer is printed to stdout (table:
         \\one key/value line; json: the created receipt), so the next step can be
         \\`receipts book <id>` without listing first.
+        \\
+        \\--date and --due-date are set at upload only: the API cannot change them
+        \\on an existing receipt, and BHB ignores both for an e-invoice, whose own
+        \\data wins. Without --due-date, BHB often reads the due date from the PDF.
         ,
     },
     .{

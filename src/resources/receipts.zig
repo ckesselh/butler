@@ -109,6 +109,7 @@ fn upload(c: Client, f: *const cli.Flags, stdout: *std.Io.Writer, stderr: *std.I
     try o.strOpt("counterparty", f.opt("counterparty"));
     try o.strOpt("invoice_number", f.opt("invoice-number"));
     try o.strOpt("date", f.opt("date"));
+    try o.strOpt("date_payment_due", f.opt("due-date"));
     // A credit note (Gutschrift) is a receipt with a negative amount; BHB then
     // reverses its booking automatically. --credit-note sends --amount negative
     // so the user can pass the gross amount without a leading minus.

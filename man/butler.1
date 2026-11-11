@@ -437,6 +437,9 @@ invoice number
 .B \-\-date YYYY\-MM\-DD
 document date
 .TP
+.B \-\-due\-date YYYY\-MM\-DD
+payment due date
+.TP
 .B \-\-amount n
 gross amount
 .TP
@@ -454,6 +457,13 @@ On success the new receipt's id_by_customer is printed to stdout (table:
 one key/value line; json: the created receipt), so the next step can be
 .br
 `receipts book <id>` without listing first.
+.br
+.PP
+\-\-date and \-\-due\-date are set at upload only: the API cannot change them
+.br
+on an existing receipt, and BHB ignores both for an e\-invoice, whose own
+.br
+data wins. Without \-\-due\-date, BHB often reads the due date from the PDF.
 .br
 .SS butler receipts delete <id>
 .TP

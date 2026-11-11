@@ -330,6 +330,13 @@ sections.
   4. If updates are intentionally unsupported, can `/receipts/upload` accept
      an original foreign-currency amount plus either an exchange rate or the
      authoritative converted EUR amount?
+- `[FYI]` **Dates and payment reference only at creation:** `/receipts/upload`
+  and `/receipts/add` accept `date`, `date_payment_due`, `date_delivery` and
+  `payment_reference` besides the amount fields. Without an update endpoint
+  (above) they cannot be changed afterwards. On `/receipts/upload` the spec says
+  `date`, `date_delivery` and `date_payment_due` are ignored for an e-invoice,
+  and `date_delivery` must not lie after `date` (DATEV). butler sends `date` and
+  `date_payment_due` (`--date`, `--due-date`). **[spec, 2026-11-11]**
 - `[FYI]` **Upload field names:** the file goes in `file` as **base64**, and
   `file_name` is **required** alongside it (because `file` is base64). It is
   *not* `filename`, `file_content`, or `base64`. **[spec]**

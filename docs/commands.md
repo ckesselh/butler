@@ -417,6 +417,7 @@ butler receipts upload <file> --type <type> [flags]
 - `--counterparty <text>` — counterparty
 - `--invoice-number <s>` — invoice number
 - `--date <YYYY-MM-DD>` — document date
+- `--due-date <YYYY-MM-DD>` — payment due date
 - `--amount <n>` — gross amount
 - `--vat-rate <n>` — vat rate
 - `--credit-note` — a Gutschrift: send --amount negative (BHB reverses the booking)
@@ -425,6 +426,10 @@ butler receipts upload <file> --type <type> [flags]
 On success the new receipt's id_by_customer is printed to stdout (table:
 one key/value line; json: the created receipt), so the next step can be
 `receipts book <id>` without listing first.
+
+--date and --due-date are set at upload only: the API cannot change them
+on an existing receipt, and BHB ignores both for an e-invoice, whose own
+data wins. Without --due-date, BHB often reads the due date from the PDF.
 
 ### `delete`
 
