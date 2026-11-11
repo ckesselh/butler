@@ -4,6 +4,14 @@ All notable changes to butler are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `receipts upload --due-date YYYY-MM-DD` sets the receipt's payment due date,
+  for example an invoice issued in November for a premium due on 1 January.
+  BHB accepts it only at upload and ignores it for an e-invoice.
+
 ## [0.8.1] - 2026-10-20
 
 This release makes the open-item filters trustworthy over a long date range,
